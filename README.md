@@ -1,0 +1,94 @@
+# crowd-annotation-platform
+
+A crowdsourced text-annotation service: admin and annotator roles, per-annotator sample
+assignment, multi-round review, local LLM pre-labelling, and CSV/JSON dataset export.
+
+It exists because a knowledge-distillation study needed labelled corpora that did not
+exist yet. This is the upstream half of that work — the datasets it produces are the
+input to **llm-distill-study**, and the distillation dashboard below is where the two
+meet.
+
+The stack is deliberately boring: React + Ant Design, Node/Express, MongoDB. The
+interesting part is the annotation workflow, not the CRUD.
+
+![Task list](docs/screenshots/02_task_list.jpg)
+
+## What it does
+
+**Tasks and samples.** An admin creates a classification or NER task, imports samples
+from a file, and assigns ranges of them to annotators. Each annotator gets a queue and
+a `next-sample` endpoint, so two people never land on the same item by accident.
+
+**Annotation.** Separate interfaces for span-level NER and for classification, both
+keyboard-driven — the label set comes from the task config, so adding a task type does
+not mean writing a new page.
+
+| | |
+|---|---|
+| ![NER annotation](docs/screenshots/06_ner_annotation.jpg) | ![Classification](docs/screenshots/07_cls_annotation.jpg) |
+
+**Review.** Submitted annotations go into a review queue; a reviewer accepts or rejects
+individually or in batches (`PATCH /:annId/review`, `POST /batch-review`). Rejected
+items return to the annotator's queue rather than being silently dropped.
+
+**LLM pre-labelling.** A task can be pre-labelled by a local Ollama model, or by Claude
+if a key is configured, so annotators correct a draft instead of starting from an empty
+page. Pre-labels are stored as a distinct source, never mixed into human labels — which
+is the whole point, since the downstream study compares those sources against each other.
+
+**Distillation dashboard.** From a finished task you can train a lightweight student
+model on the collected labels and see accuracy, per-class distribution, a confusion
+matrix and training curves in the browser. It closes the loop from raw text to a trained
+classifier without leaving the app.
+
+| | |
+|---|---|
+| ![Distillation metrics](docs/screenshots/09_distill_metrics.jpg) | ![Confusion matrix](docs/screenshots/11_confusion_matrix.jpg) |
+
+## Running it
+
+Requires Node 18+, MongoDB, and — for pre-labelling — a local [Ollama](https://ollama.com).
+
+```bash
+cp .env.example backend/.env    # fill in at minimum JWT_SECRET and MONGO_URI
+cd backend  && npm install && npm run dev     # :4000
+cd frontend && npm install && npm run dev     # :5173
+```
+
+On Windows, `./start-all.ps1` checks the MongoDB service, checks Ollama, and brings both
+halves up in separate windows.
+
+| Variable | |
+|---|---|
+| `MONGO_URI` | defaults to `mongodb://localhost:27017/crowd_platform` |
+| `JWT_SECRET` | **set this** — falls back to a dev default and warns loudly |
+| `PORT` / `CORS_ORIGIN` | API port and allowed origin |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | local pre-labelling backend |
+| `ANTHROPIC_API_KEY` / `CLAUDE_MODEL` | optional hosted pre-labelling backend |
+
+## Layout
+
+```
+backend/src
+  index.js        express app, mongo connection
+  models/         User · Task · Sample · Annotation
+  routes/         auth · users · tasks · annotations · llm · distill
+  middleware/     JWT auth
+frontend/src
+  pages/          login · task list · task detail · annotation · review · data management
+  api/client.js   fetch wrapper, token handling
+docs/
+  DATABASE_ER_DIAGRAM.md    entity relationships, as Mermaid
+```
+
+The four collections and their relationships are in
+[docs/DATABASE_ER_DIAGRAM.md](docs/DATABASE_ER_DIAGRAM.md).
+
+## Status
+
+This was built as an undergraduate thesis project and ran in earnest for one thing:
+producing the corpora behind the distillation study. It is not hardened for public
+deployment — there is no rate limiting, no password policy, and the JWT secret falls
+back to a development default if you do not set it.
+
+The screenshots above are from that working deployment.
