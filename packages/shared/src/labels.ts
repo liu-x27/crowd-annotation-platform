@@ -1,21 +1,32 @@
 /**
- * Label colours are chosen to stay distinguishable on both the light and the dark theme;
- * the UI derives tints from them with color-mix, so only the base hue is stored.
+ * Default label colours: an eight-hue categorical order validated for colour-vision
+ * deficiency on neighbouring pairs (OKLab ΔE ≥ 8 under protan/deutan simulation) on both
+ * themes. The stored value is the light-theme step; the UI swaps in the matching dark step.
+ * A ninth label repeats a hue rather than inventing one: labels always show their name,
+ * so colour is never the only thing telling them apart.
  */
 export const LABEL_PALETTE = [
-  '#3b6fe0', // blue
-  '#1f9d63', // green
-  '#d4861b', // amber
-  '#d9483b', // red
-  '#8250df', // violet
-  '#0f97aa', // cyan
-  '#d0418d', // pink
-  '#6b9b1d', // lime
-  '#e06a1f', // orange
-  '#5461d6', // indigo
-  '#119488', // teal
-  '#9a7b12', // ochre
+  '#2a78d6', // blue
+  '#eb6834', // orange
+  '#1baf7a', // aqua
+  '#eda100', // yellow
+  '#e87ba4', // magenta
+  '#008300', // green
+  '#4a3aa7', // violet
+  '#e34948', // red
 ] as const;
+
+/** Dark-theme steps of the same hues. */
+export const LABEL_PALETTE_DARK: Record<string, string> = {
+  '#2a78d6': '#3987e5',
+  '#eb6834': '#d95926',
+  '#1baf7a': '#199e70',
+  '#eda100': '#c98500',
+  '#e87ba4': '#d55181',
+  '#008300': '#008300',
+  '#4a3aa7': '#9085e9',
+  '#e34948': '#e66767',
+};
 
 /** Keys the annotation workspaces bind to actions; labels may not use them. */
 export const RESERVED_HOTKEYS = ['a', 's', 'f', 'z'] as const;

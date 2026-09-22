@@ -1,0 +1,282 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Components only use these semantic names, so the dark theme is a second
+ * set of values, not a second set of classes. "Ink on paper, with a highlighter": neutral
+ * warm greys, one blue-violet accent for interaction, and a marker yellow reserved for
+ * the brand and for emphasis.
+ */
+:root {
+  --bg: #f6f6f3;
+  --surface: #ffffff;
+  --surface-2: #f0f0ec;
+  --surface-3: #e8e8e3;
+  --ink: #17171a;
+  --ink-2: #4d4d55;
+  --ink-3: #85858e;
+  --line: #e3e3de;
+  --line-2: #d2d2cb;
+  --accent: #4c52d6;
+  --accent-2: #3d42b8;
+  --accent-soft: color-mix(in oklab, var(--accent) 11%, transparent);
+  --on-accent: #ffffff;
+  --marker: #fcd34d;
+  --success: #16a34a;
+  --warning: #c77c0c;
+  --danger: #d33a2c;
+  --shadow: 0 1px 2px rgb(20 20 25 / 0.05), 0 2px 8px rgb(20 20 25 / 0.04);
+  --shadow-lg: 0 12px 40px rgb(20 20 25 / 0.14), 0 2px 8px rgb(20 20 25 / 0.06);
+
+  /* Charts. Categorical slots in the validated order; one-hue ordinal and sequential ramps. */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --state-track: #cde2fb;
+  --state-progress: #86b6ef;
+  --state-review: #3987e5;
+  --state-final: #184f95;
+  --seq-0: #cde2fb;
+  --seq-1: #9ec5f4;
+  --seq-2: #6da7ec;
+  --seq-3: #3987e5;
+  --seq-4: #256abf;
+  --seq-5: #1c5cab;
+  --seq-6: #104281;
+}
+
+.dark {
+  --bg: #0e0e10;
+  --surface: #161619;
+  --surface-2: #1d1d21;
+  --surface-3: #26262b;
+  --ink: #f2f2f3;
+  --ink-2: #a5a5ae;
+  --ink-3: #72727b;
+  --line: #29292e;
+  --line-2: #38383f;
+  --accent: #8d93ff;
+  --accent-2: #a3a8ff;
+  --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+  --on-accent: #0e0e10;
+  --marker: #e7b93a;
+  --success: #3fbf6f;
+  --warning: #e0a03a;
+  --danger: #f06a5e;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.55);
+
+  /* Dark steps of the same hues, chosen for the dark surface — not an automatic inversion. */
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --state-track: #0d366b;
+  --state-progress: #184f95;
+  --state-review: #3987e5;
+  --state-final: #9ec5f4;
+  --seq-0: #0d366b;
+  --seq-1: #104281;
+  --seq-2: #184f95;
+  --seq-3: #256abf;
+  --seq-4: #3987e5;
+  --seq-5: #6da7ec;
+  --seq-6: #9ec5f4;
+}
+
+@theme inline {
+  --font-sans:
+    "Inter Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-marker: var(--marker);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --shadow-card: var(--shadow);
+  --shadow-float: var(--shadow-lg);
+
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-pop: pop 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100vh;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+}
+
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .skeleton {
+    border-radius: 6px;
+    background: linear-gradient(
+      90deg,
+      var(--surface-2) 25%,
+      var(--surface-3) 37%,
+      var(--surface-2) 63%
+    );
+    background-size: 400% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /*
+   * A label's colour arrives as --c. The colour marks identity through a dot and a tint;
+   * the text itself stays in ink, so light hues (yellow, aqua) never become unreadable.
+   */
+  .chip {
+    background: color-mix(in oklab, var(--c) 11%, var(--surface));
+    border: 1px solid color-mix(in oklab, var(--c) 32%, var(--line));
+    color: var(--ink);
+  }
+  .chip-dot {
+    background: var(--c);
+  }
+
+  /* Entity highlight in the NER canvas: a marker stroke under the text. */
+  .mark {
+    background: linear-gradient(
+      to top,
+      color-mix(in oklab, var(--c) 34%, transparent) 0,
+      color-mix(in oklab, var(--c) 34%, transparent) 62%,
+      transparent 62%
+    );
+    box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--c) 85%, transparent);
+    border-radius: 2px;
+  }
+  .mark-draft {
+    background: none;
+    box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--c) 70%, transparent);
+    text-decoration: underline dashed color-mix(in oklab, var(--c) 70%, transparent);
+    text-underline-offset: 6px;
+  }
+
+  /* Heatmap cell text: ink on light fills, white on dark fills — flipped for the dark theme. */
+  .heat-cell {
+    color: var(--ink);
+  }
+  .heat-cell[data-level="4"],
+  .heat-cell[data-level="5"],
+  .heat-cell[data-level="6"] {
+    color: #ffffff;
+  }
+  .dark .heat-cell[data-level="4"],
+  .dark .heat-cell[data-level="5"],
+  .dark .heat-cell[data-level="6"] {
+    color: #0e0e10;
+  }
+
+  .prose-guidelines {
+    font-size: 0.875rem;
+    line-height: 1.65;
+    color: var(--ink-2);
+  }
+  .prose-guidelines h1,
+  .prose-guidelines h2,
+  .prose-guidelines h3 {
+    color: var(--ink);
+    font-weight: 600;
+    margin: 1rem 0 0.4rem;
+  }
+  .prose-guidelines h2 {
+    font-size: 1rem;
+  }
+  .prose-guidelines ul {
+    list-style: disc;
+    padding-left: 1.2rem;
+    margin: 0.4rem 0;
+  }
+  .prose-guidelines li {
+    margin: 0.2rem 0;
+  }
+  .prose-guidelines strong {
+    color: var(--ink);
+  }
+  .prose-guidelines code {
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    background: var(--surface-2);
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
