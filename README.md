@@ -16,12 +16,19 @@ interesting part is the annotation workflow, not the CRUD.
 ## What it does
 
 **Tasks and samples.** An admin creates a classification or NER task, imports samples
-from a file, and assigns ranges of them to annotators. Each annotator gets a queue and
-a `next-sample` endpoint, so two people never land on the same item by accident.
+from a file, and assigns ranges of them to annotators. Each annotator gets a queue and a
+`next-sample` endpoint that serves it.
+
+Where the samples have been assigned, the queues are disjoint by construction and two
+annotators cannot be handed the same item. Where they have not, everyone draws from one
+pool and two annotators can — `next-sample` filters on `assignedTo` and on what you have
+already done, and there is no atomic claim. Assignment is what makes the queues exclusive,
+not the endpoint.
 
 **Annotation.** Separate interfaces for span-level NER and for classification, both
-keyboard-driven — the label set comes from the task config, so adding a task type does
-not mean writing a new page.
+keyboard-driven — the label set comes from the task config, so a new task inside either
+of those two modes needs no new page. A genuinely new interaction would: those are the
+two that exist.
 
 | | |
 |---|---|
@@ -69,9 +76,15 @@ Requires Node 18+, MongoDB, and — for pre-labelling — a local [Ollama](https
 
 ```bash
 cp .env.example backend/.env    # fill in at minimum JWT_SECRET and MONGO_URI
-cd backend  && npm install && npm run dev     # :4000
-cd frontend && npm install && npm run dev     # :5173
+cd backend  && npm install && npm run dev     # terminal 1, :4000
 ```
+
+```bash
+cd frontend && npm install && npm run dev     # terminal 2, :5173
+```
+
+Two terminals, each starting from the repository root — `npm run dev` does not return,
+and the second `cd` is relative to the root, not to `backend`.
 
 On Windows, `./start-all.ps1` checks the MongoDB service, checks Ollama, and brings both
 halves up in separate windows.
