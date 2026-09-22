@@ -6,7 +6,7 @@ import { useSearchParams } from 'react-router';
 import { ProjectLabel } from '../../components/labels';
 import { Button } from '../../components/ui/button';
 import { Badge, EmptyState, Skeleton } from '../../components/ui/display';
-import { Input, Select, Segmented } from '../../components/ui/form';
+import { Input, Segmented, Select } from '../../components/ui/form';
 import { Tooltip } from '../../components/ui/overlay';
 import { useI18n } from '../../i18n';
 import { api } from '../../lib/api';
@@ -71,25 +71,55 @@ export function DataPage() {
   });
   const pages = Math.max(1, Math.ceil((items.data?.total ?? 0) / PAGE_SIZE));
 
-  const labelOptions = [{ value: 'all', label: t('data.anyLabel') }, ...project.labels.map((l) => ({ value: l.name, label: l.name }))];
-  const draftOptions = (['any', 'missing', 'ok', 'error', 'disagrees'] as const).map((k) => ({ value: k, label: t(`data.draft.${k}`) }));
+  const labelOptions = [
+    { value: 'all', label: t('data.anyLabel') },
+    ...project.labels.map((l) => ({ value: l.name, label: l.name })),
+  ];
+  const draftOptions = (['any', 'missing', 'ok', 'error', 'disagrees'] as const).map((k) => ({
+    value: k,
+    label: t(`data.draft.${k}`),
+  }));
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-64">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-3" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('data.search')} className="h-8 pl-8 text-[13px]" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('data.search')}
+            className="h-8 pl-8 text-[13px]"
+          />
         </div>
         <Segmented
           size="sm"
           value={q.state ?? 'all'}
           onChange={(v) => set({ state: v })}
-          options={(['all', 'unlabeled', 'in_progress', 'needs_review', 'finalized'] as const).map((s) => ({ value: s, label: t(`data.state.${s}`) }))}
+          options={(['all', 'unlabeled', 'in_progress', 'needs_review', 'finalized'] as const).map(
+            (s) => ({ value: s, label: t(`data.state.${s}`) }),
+          )}
         />
-        <Select size="sm" className="w-40" value={q.label ?? 'all'} onChange={(v) => set({ label: v })} options={labelOptions} />
-        <Select size="sm" className="w-36" value={q.llm ?? 'any'} onChange={(v) => set({ llm: v })} options={draftOptions} />
-        <Button size="sm" variant={q.flagged ? 'secondary' : 'ghost'} icon={<Flag className="size-3.5" />} onClick={() => set({ flagged: q.flagged ? null : '1' })}>
+        <Select
+          size="sm"
+          className="w-40"
+          value={q.label ?? 'all'}
+          onChange={(v) => set({ label: v })}
+          options={labelOptions}
+        />
+        <Select
+          size="sm"
+          className="w-36"
+          value={q.llm ?? 'any'}
+          onChange={(v) => set({ llm: v })}
+          options={draftOptions}
+        />
+        <Button
+          size="sm"
+          variant={q.flagged ? 'secondary' : 'ghost'}
+          icon={<Flag className="size-3.5" />}
+          onClick={() => set({ flagged: q.flagged ? null : '1' })}
+        >
           {t('data.flaggedOnly')}
         </Button>
         <Button
@@ -102,18 +132,31 @@ export function DataPage() {
         </Button>
         <div className="flex-1" />
         {can('project:manage') && (
-          <Button size="sm" icon={<Upload className="size-4" />} onClick={() => set({ import: '1', page: params.get('page') })}>
+          <Button
+            size="sm"
+            icon={<Upload className="size-4" />}
+            onClick={() => set({ import: '1', page: params.get('page') })}
+          >
             {t('data.import')}
           </Button>
         )}
         {can('data:export') && (
-          <Button size="sm" icon={<Download className="size-4" />} onClick={() => set({ export: '1', page: params.get('page') })}>
+          <Button
+            size="sm"
+            icon={<Download className="size-4" />}
+            onClick={() => set({ export: '1', page: params.get('page') })}
+          >
             {t('data.export')}
           </Button>
         )}
       </div>
 
-      <div className={cn('card overflow-hidden transition-opacity', items.isFetching && items.data && 'opacity-70')}>
+      <div
+        className={cn(
+          'card overflow-hidden transition-opacity',
+          items.isFetching && items.data && 'opacity-70',
+        )}
+      >
         {items.isLoading ? (
           <div className="flex flex-col gap-2 p-4">
             {Array.from({ length: 8 }, (_, i) => (
@@ -146,13 +189,25 @@ export function DataPage() {
         )}
         {items.data && items.data.total > 0 && (
           <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-xs text-ink-3">
-            <span className="tabular">{t('data.results', { n: fmt.number(items.data.total) })}</span>
+            <span className="tabular">
+              {t('data.results', { n: fmt.number(items.data.total) })}
+            </span>
             <div className="flex items-center gap-2">
-              <Button size="xs" variant="ghost" disabled={page <= 1} onClick={() => set({ page: String(page - 1) })}>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={page <= 1}
+                onClick={() => set({ page: String(page - 1) })}
+              >
                 {t('common.previous')}
               </Button>
               <span className="tabular">{t('common.page', { page, pages })}</span>
-              <Button size="xs" variant="ghost" disabled={page >= pages} onClick={() => set({ page: String(page + 1) })}>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={page >= pages}
+                onClick={() => set({ page: String(page + 1) })}
+              >
                 {t('common.next')}
               </Button>
             </div>
@@ -161,8 +216,14 @@ export function DataPage() {
       </div>
 
       <ItemDrawer itemId={openItem} onClose={() => setOpenItem(null)} />
-      <ImportDialog open={params.get('import') === '1'} onOpenChange={(o) => !o && set({ import: null, page: params.get('page') })} />
-      <ExportDialog open={params.get('export') === '1'} onOpenChange={(o) => !o && set({ export: null, page: params.get('page') })} />
+      <ImportDialog
+        open={params.get('import') === '1'}
+        onOpenChange={(o) => !o && set({ import: null, page: params.get('page') })}
+      />
+      <ExportDialog
+        open={params.get('export') === '1'}
+        onOpenChange={(o) => !o && set({ export: null, page: params.get('page') })}
+      />
     </div>
   );
 }
@@ -171,9 +232,13 @@ function Row({ row, onOpen }: { row: ItemRow; onOpen(): void }) {
   const { t } = useI18n();
   const { project } = useProjectContext();
   const ner = project.type === 'ner';
-  const draftDiffers = row.final && row.llm?.status === 'submitted' && !ner && row.llm.label !== row.final.label;
+  const draftDiffers =
+    row.final && row.llm?.status === 'submitted' && !ner && row.llm.label !== row.final.label;
   return (
-    <tr onClick={onOpen} className="cursor-pointer border-b border-line last:border-0 hover:bg-surface-2/60">
+    <tr
+      onClick={onOpen}
+      className="cursor-pointer border-b border-line last:border-0 hover:bg-surface-2/60"
+    >
       <td className="tabular px-4 py-2.5 text-ink-3">{row.seq}</td>
       <td className="max-w-[420px] px-3 py-2.5">
         <div className="flex items-center gap-1.5">
@@ -224,7 +289,12 @@ function Row({ row, onOpen }: { row: ItemRow; onOpen(): void }) {
             {row.llm.spanCount ?? 0}
           </span>
         ) : (
-          <ProjectLabel labels={project.labels} name={row.llm.label} size="sm" strike={!!draftDiffers} />
+          <ProjectLabel
+            labels={project.labels}
+            name={row.llm.label}
+            size="sm"
+            strike={!!draftDiffers}
+          />
         )}
       </td>
       <td className="px-4 py-2.5">

@@ -28,16 +28,27 @@ async function parseFile(file: File): Promise<{ rows: Row[]; columns: string[] }
     let data: unknown;
     const trimmed = text.trim();
     if (trimmed.startsWith('[')) data = JSON.parse(trimmed);
-    else data = trimmed.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+    else
+      data = trimmed
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((l) => JSON.parse(l));
     const rows = (data as unknown[]).map((r) => (typeof r === 'string' ? { text: r } : (r as Row)));
     const columns = [...new Set(rows.slice(0, 200).flatMap((r) => Object.keys(r)))];
     return { rows, columns };
   }
   if (name.endsWith('.txt')) {
-    const rows = text.split(/\r?\n/).filter((l) => l.trim()).map((l) => ({ text: l }));
+    const rows = text
+      .split(/\r?\n/)
+      .filter((l) => l.trim())
+      .map((l) => ({ text: l }));
     return { rows, columns: ['text'] };
   }
-  const parsed = Papa.parse<Row>(text, { header: true, skipEmptyLines: 'greedy', delimiter: name.endsWith('.tsv') ? '\t' : '' });
+  const parsed = Papa.parse<Row>(text, {
+    header: true,
+    skipEmptyLines: 'greedy',
+    delimiter: name.endsWith('.tsv') ? '\t' : '',
+  });
   return { rows: parsed.data, columns: parsed.meta.fields ?? [] };
 }
 
@@ -47,14 +58,26 @@ function parseSpans(v: unknown): Span[] | undefined {
     const arr = typeof v === 'string' ? JSON.parse(v) : v;
     if (!Array.isArray(arr)) return undefined;
     return arr
-      .filter((s) => s && typeof s.start === 'number' && typeof s.end === 'number' && typeof s.label === 'string')
+      .filter(
+        (s) =>
+          s &&
+          typeof s.start === 'number' &&
+          typeof s.end === 'number' &&
+          typeof s.label === 'string',
+      )
       .map((s) => ({ start: s.start, end: s.end, label: s.label }));
   } catch {
     return undefined;
   }
 }
 
-export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange(o: boolean): void }) {
+export function ImportDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange(o: boolean): void;
+}) {
   const { t, fmt } = useI18n();
   const { project } = useProjectContext();
   const qc = useQueryClient();
@@ -82,6 +105,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     setError(null);
     setProgress(null);
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: opening is the trigger; reset is a new closure every render, so listing it would wipe a picked file on the next render
   useEffect(() => {
     if (open) reset();
   }, [open]);
@@ -93,8 +117,17 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       const parsed = await parseFile(f);
       setRows(parsed.rows);
       setColumns(parsed.columns);
-      setTextCol(guess(parsed.columns, ['text', 'content', 'sentence', 'review', 'title', 'body']) ?? parsed.columns[0] ?? NONE);
-      setLabelCol(guess(parsed.columns, ner ? ['spans', 'entities'] : ['label', 'category', 'class', 'gold']) ?? NONE);
+      setTextCol(
+        guess(parsed.columns, ['text', 'content', 'sentence', 'review', 'title', 'body']) ??
+          parsed.columns[0] ??
+          NONE,
+      );
+      setLabelCol(
+        guess(
+          parsed.columns,
+          ner ? ['spans', 'entities'] : ['label', 'category', 'class', 'gold'],
+        ) ?? NONE,
+      );
       setIdCol(guess(parsed.columns, ['id', 'external_id', 'uid']) ?? NONE);
     } catch {
       setError(t('import.badJson'));
@@ -102,7 +135,12 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   };
 
   const known = new Set(project.labels.map((l) => l.name));
-  const incoming = labelCol === NONE ? [] : ner ? rows.flatMap((r) => (parseSpans(r[labelCol]) ?? []).map((s) => s.label)) : rows.map((r) => String(r[labelCol] ?? '').trim());
+  const incoming =
+    labelCol === NONE
+      ? []
+      : ner
+        ? rows.flatMap((r) => (parseSpans(r[labelCol]) ?? []).map((s) => s.label))
+        : rows.map((r) => String(r[labelCol] ?? '').trim());
   const unknownLabels = [...new Set(incoming.filter((l) => l && !known.has(l)))];
 
   const start = async () => {
@@ -122,7 +160,17 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         return item;
       })
       .filter((i) => i.text.trim());
-    const total: ImportResult = { inserted: 0, duplicates: 0, skipped: 0, labelsDropped: 0, labeled: 0, addedLabels: [], firstSeq: null, lastSeq: null, warnings: [] };
+    const total: ImportResult = {
+      inserted: 0,
+      duplicates: 0,
+      skipped: 0,
+      labelsDropped: 0,
+      labeled: 0,
+      addedLabels: [],
+      firstSeq: null,
+      lastSeq: null,
+      warnings: [],
+    };
     setProgress({ done: 0, total: items.length });
     setError(null);
     try {
@@ -141,7 +189,11 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         total.addedLabels.push(...r.addedLabels);
         total.firstSeq ??= r.firstSeq;
         total.lastSeq = r.lastSeq ?? total.lastSeq;
-        total.warnings.push(...r.warnings.map((w) => w.replace(/row (\d+)/, (_, n: string) => `row ${i + Number(n)}`)));
+        total.warnings.push(
+          ...r.warnings.map((w) =>
+            w.replace(/row (\d+)/, (_, n: string) => `row ${i + Number(n)}`),
+          ),
+        );
         setProgress({ done: Math.min(i + CHUNK, items.length), total: items.length });
       }
       setResult(total);
@@ -156,7 +208,10 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     }
   };
 
-  const options = [{ value: NONE, label: t('import.noColumn') }, ...columns.map((c) => ({ value: c, label: c }))];
+  const options = [
+    { value: NONE, label: t('import.noColumn') },
+    ...columns.map((c) => ({ value: c, label: c })),
+  ];
   return (
     <Dialog
       open={open}
@@ -178,9 +233,17 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="primary" disabled={rows.length === 0 || !!progress} loading={!!progress} onClick={() => void start()}>
+            <Button
+              variant="primary"
+              disabled={rows.length === 0 || !!progress}
+              loading={!!progress}
+              onClick={() => void start()}
+            >
               {progress
-                ? t('import.importing', { done: fmt.number(progress.done), total: fmt.number(progress.total) })
+                ? t('import.importing', {
+                    done: fmt.number(progress.done),
+                    total: fmt.number(progress.total),
+                  })
                 : t('import.start', { n: fmt.number(rows.length) })}
             </Button>
           </>
@@ -192,9 +255,17 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <CheckCircle2 className="size-10 text-success" />
           <div className="text-[15px] font-semibold">{t('import.done')}</div>
           <p className="text-[13px] text-ink-2">
-            {t('import.summary', { inserted: fmt.number(result.inserted), duplicates: fmt.number(result.duplicates), skipped: fmt.number(result.skipped) })}
+            {t('import.summary', {
+              inserted: fmt.number(result.inserted),
+              duplicates: fmt.number(result.duplicates),
+              skipped: fmt.number(result.skipped),
+            })}
           </p>
-          {result.labeled > 0 && <p className="text-xs text-ink-3">{t('import.labeled', { n: fmt.number(result.labeled) })}</p>}
+          {result.labeled > 0 && (
+            <p className="text-xs text-ink-3">
+              {t('import.labeled', { n: fmt.number(result.labeled) })}
+            </p>
+          )}
           {result.warnings.length > 0 && (
             <div className="mt-2 w-full rounded-lg bg-warning/10 p-3 text-left text-xs text-warning">
               <div className="mb-1 font-medium">{t('import.warnings')}</div>
@@ -244,7 +315,11 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             <FileUp className="size-4 text-ink-3" />
             <span className="font-medium">{file.name}</span>
             <Badge>{t('import.rows', { n: fmt.number(rows.length) })}</Badge>
-            <button type="button" className="ml-auto text-xs text-accent hover:underline" onClick={reset}>
+            <button
+              type="button"
+              className="ml-auto text-xs text-accent hover:underline"
+              onClick={reset}
+            >
               {t('common.edit')}
             </button>
           </div>
@@ -266,10 +341,18 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                 <tbody>
                   {rows.slice(0, 6).map((r, i) => (
                     <tr key={i} className="border-b border-line last:border-0">
-                      <td className="w-8 bg-surface-2/60 px-2 py-1.5 text-right text-ink-3 tabular">{i + 1}</td>
-                      <td className="max-w-0 truncate px-3 py-1.5 text-ink">{textCol !== NONE ? String(r[textCol] ?? '') : ''}</td>
+                      <td className="w-8 bg-surface-2/60 px-2 py-1.5 text-right text-ink-3 tabular">
+                        {i + 1}
+                      </td>
+                      <td className="max-w-0 truncate px-3 py-1.5 text-ink">
+                        {textCol !== NONE ? String(r[textCol] ?? '') : ''}
+                      </td>
                       {labelCol !== NONE && (
-                        <td className="w-40 truncate px-3 py-1.5 text-ink-2">{ner ? `${parseSpans(r[labelCol])?.length ?? 0} spans` : String(r[labelCol] ?? '')}</td>
+                        <td className="w-40 truncate px-3 py-1.5 text-ink-2">
+                          {ner
+                            ? `${parseSpans(r[labelCol])?.length ?? 0} spans`
+                            : String(r[labelCol] ?? '')}
+                        </td>
                       )}
                     </tr>
                   ))}
@@ -290,12 +373,23 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               <div className="rounded-xl border border-warning/30 bg-warning/5 p-3">
                 <div className="flex items-center gap-2 text-[13px] font-medium text-ink">
                   <TriangleAlert className="size-4 text-warning" />
-                  {t('import.unknownLabels')}: <span className="font-mono text-xs text-ink-2">{unknownLabels.slice(0, 8).join(', ')}</span>
+                  {t('import.unknownLabels')}:{' '}
+                  <span className="font-mono text-xs text-ink-2">
+                    {unknownLabels.slice(0, 8).join(', ')}
+                  </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-3">
                   {(['add', 'skip', 'error'] as const).map((k) => (
-                    <label key={k} className="flex cursor-pointer items-center gap-1.5 text-[13px] text-ink-2">
-                      <input type="radio" checked={unknown === k} onChange={() => setUnknown(k)} className="accent-[var(--accent)]" />
+                    <label
+                      key={k}
+                      className="flex cursor-pointer items-center gap-1.5 text-[13px] text-ink-2"
+                    >
+                      <input
+                        type="radio"
+                        checked={unknown === k}
+                        onChange={() => setUnknown(k)}
+                        className="accent-[var(--accent)]"
+                      />
                       {t(`import.unknown.${k}`)}
                     </label>
                   ))}
@@ -304,13 +398,24 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             )}
           </div>
           {progress && (
-            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--state-track)' }}>
-              <div className="h-full rounded-full transition-[width]" style={{ width: `${(progress.done / progress.total) * 100}%`, background: 'var(--state-review)' }} />
+            <div
+              className="h-1.5 overflow-hidden rounded-full"
+              style={{ background: 'var(--state-track)' }}
+            >
+              <div
+                className="h-full rounded-full transition-[width]"
+                style={{
+                  width: `${(progress.done / progress.total) * 100}%`,
+                  background: 'var(--state-review)',
+                }}
+              />
             </div>
           )}
         </div>
       )}
-      {error && <p className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-[13px] text-danger">{error}</p>}
+      {error && (
+        <p className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-[13px] text-danger">{error}</p>
+      )}
     </Dialog>
   );
 }

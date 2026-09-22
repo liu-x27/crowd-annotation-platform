@@ -9,7 +9,13 @@ import { api } from '../../lib/api';
 import { cn, download } from '../../lib/utils';
 import { useProjectContext } from '../projects/ProjectLayout';
 
-export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChange(o: boolean): void }) {
+export function ExportDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange(o: boolean): void;
+}) {
   const { t } = useI18n();
   const { project } = useProjectContext();
   const [format, setFormat] = useState<ExportFormat>('jsonl');
@@ -23,7 +29,8 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     ...(project.type === 'ner' ? [{ value: 'conll' as const, label: 'CoNLL' }] : []),
   ];
   const sets: ExportLabelSet[] = ['final', 'human', 'llm', 'import', 'all'];
-  const allowed = (s: ExportLabelSet) => (format === 'conll' ? s === 'final' : format === 'csv' ? s !== 'all' : true);
+  const allowed = (s: ExportLabelSet) =>
+    format === 'conll' ? s === 'final' : format === 'csv' ? s !== 'all' : true;
 
   return (
     <Dialog
@@ -39,7 +46,14 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             variant="primary"
             icon={<Download className="size-4" />}
             onClick={() => {
-              download(api.exportUrl(project.id, { format, labels: allowed(labels) ? labels : 'final', onlyFinalized, includeMeta }));
+              download(
+                api.exportUrl(project.id, {
+                  format,
+                  labels: allowed(labels) ? labels : 'final',
+                  onlyFinalized,
+                  includeMeta,
+                }),
+              );
               onOpenChange(false);
             }}
           >
@@ -49,7 +63,10 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       }
     >
       <div className="flex flex-col gap-5">
-        <Field label={t('export.format')} hint={format === 'conll' ? t('export.conllHelp') : undefined}>
+        <Field
+          label={t('export.format')}
+          hint={format === 'conll' ? t('export.conllHelp') : undefined}
+        >
           <Segmented
             value={format}
             onChange={(f) => {
@@ -80,8 +97,17 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           </div>
         </Field>
         <div className="flex flex-col gap-3">
-          <Switch checked={onlyFinalized} onChange={setOnlyFinalized} label={t('export.onlyFinalized')} />
-          <Switch checked={includeMeta} onChange={setIncludeMeta} label={t('export.includeMeta')} disabled={format === 'conll'} />
+          <Switch
+            checked={onlyFinalized}
+            onChange={setOnlyFinalized}
+            label={t('export.onlyFinalized')}
+          />
+          <Switch
+            checked={includeMeta}
+            onChange={setIncludeMeta}
+            label={t('export.includeMeta')}
+            disabled={format === 'conll'}
+          />
         </div>
       </div>
     </Dialog>

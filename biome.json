@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/data", "!**/drizzle", "!**/node_modules", "!**/*.gen.ts"]
+    "includes": ["**", "!**/dist", "!data", "!**/drizzle", "!**/node_modules", "!**/*.gen.ts"]
   },
   "formatter": {
     "enabled": true,

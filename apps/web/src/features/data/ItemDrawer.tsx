@@ -1,6 +1,16 @@
 import type { AnnotationView, Span } from '@crowd/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, ChevronDown, Eye, EyeOff, FileText, Flag, RotateCcw, Trash2, UserRound } from 'lucide-react';
+import {
+  Bot,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  FileText,
+  Flag,
+  RotateCcw,
+  Trash2,
+  UserRound,
+} from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { ProjectLabel } from '../../components/labels';
@@ -22,7 +32,14 @@ function Answer({ a, text }: { a: AnnotationView; text: string }) {
   const { project } = useProjectContext();
   const [raw, setRaw] = useState(false);
   const ner = project.type === 'ner';
-  const statusTone = a.status === 'error' ? 'danger' : a.status === 'rejected' ? 'warning' : a.status === 'submitted' ? 'success' : 'neutral';
+  const statusTone =
+    a.status === 'error'
+      ? 'danger'
+      : a.status === 'rejected'
+        ? 'warning'
+        : a.status === 'submitted'
+          ? 'success'
+          : 'neutral';
   return (
     <li className="relative flex gap-3 pb-5 last:pb-0">
       <span className="absolute top-8 bottom-0 left-[13px] w-px bg-line last:hidden" aria-hidden />
@@ -44,7 +61,11 @@ function Answer({ a, text }: { a: AnnotationView; text: string }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-[13px]">
           <span className="font-medium text-ink">
-            {a.source === 'human' ? (a.user?.displayName ?? a.user?.username) : a.source === 'llm' ? a.model : t('data.source.import')}
+            {a.source === 'human'
+              ? (a.user?.displayName ?? a.user?.username)
+              : a.source === 'llm'
+                ? a.model
+                : t('data.source.import')}
           </span>
           <Badge tone={statusTone}>
             {t(
@@ -52,7 +73,9 @@ function Answer({ a, text }: { a: AnnotationView; text: string }) {
             )}
           </Badge>
           {a.flagged && <Flag className="size-3.5 fill-warning text-warning" />}
-          <span className="ml-auto text-[11px] text-ink-3">{fmt.dateTime(a.submittedAt ?? a.createdAt)}</span>
+          <span className="ml-auto text-[11px] text-ink-3">
+            {fmt.dateTime(a.submittedAt ?? a.createdAt)}
+          </span>
         </div>
         <div className="mt-1.5">
           {a.status === 'error' ? (
@@ -64,7 +87,9 @@ function Answer({ a, text }: { a: AnnotationView; text: string }) {
           )}
         </div>
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-3">
-          {a.durationMs != null && <span>{t('data.duration', { t: fmt.duration(a.durationMs) })}</span>}
+          {a.durationMs != null && (
+            <span>{t('data.duration', { t: fmt.duration(a.durationMs) })}</span>
+          )}
           {a.latencyMs != null && <span>{t('data.latency', { n: a.latencyMs })}</span>}
           {a.draftShown != null && (
             <span className="flex items-center gap-1">
@@ -73,11 +98,23 @@ function Answer({ a, text }: { a: AnnotationView; text: string }) {
             </span>
           )}
         </div>
-        {a.note && <p className="mt-1.5 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs text-ink-2">{a.note}</p>}
-        {a.reviewNote && <p className="mt-1.5 rounded-md bg-warning/10 px-2.5 py-1.5 text-xs text-warning">{a.reviewNote}</p>}
+        {a.note && (
+          <p className="mt-1.5 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs text-ink-2">
+            {a.note}
+          </p>
+        )}
+        {a.reviewNote && (
+          <p className="mt-1.5 rounded-md bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
+            {a.reviewNote}
+          </p>
+        )}
         {a.rawOutput != null && (
           <div className="mt-2">
-            <button type="button" onClick={() => setRaw((r) => !r)} className="flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-ink">
+            <button
+              type="button"
+              onClick={() => setRaw((r) => !r)}
+              className="flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-ink"
+            >
               <ChevronDown className={`size-3 transition-transform ${raw ? '' : '-rotate-90'}`} />
               {t('data.rawOutput')}
             </button>
@@ -151,9 +188,18 @@ export function ItemDrawer({ itemId, onClose }: { itemId: number | null; onClose
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border border-line bg-surface-2/50 p-4">
             {project.type === 'ner' ? (
-              <NerCanvas text={d.item.text} labels={project.labels} spans={strip(d.final?.spans)} onChange={() => {}} readOnly size="md" />
+              <NerCanvas
+                text={d.item.text}
+                labels={project.labels}
+                spans={strip(d.final?.spans)}
+                onChange={() => {}}
+                readOnly
+                size="md"
+              />
             ) : (
-              <p className="text-[16px] leading-relaxed break-words whitespace-pre-wrap text-ink">{d.item.text}</p>
+              <p className="text-[16px] leading-relaxed break-words whitespace-pre-wrap text-ink">
+                {d.item.text}
+              </p>
             )}
           </div>
           {d.final && (
@@ -162,7 +208,9 @@ export function ItemDrawer({ itemId, onClose }: { itemId: number | null; onClose
               {project.type === 'classification' ? (
                 <ProjectLabel labels={project.labels} name={d.final.label} />
               ) : (
-                <span>{t('annotate.entities')}: {d.final.spans?.length ?? 0}</span>
+                <span>
+                  {t('annotate.entities')}: {d.final.spans?.length ?? 0}
+                </span>
               )}
               <Badge>{d.final.source}</Badge>
               <span className="text-xs text-ink-3">
@@ -170,7 +218,13 @@ export function ItemDrawer({ itemId, onClose }: { itemId: number | null; onClose
                 {fmt.dateTime(d.final.at)}
               </span>
               {can('review') && (
-                <Button size="xs" variant="ghost" className="ml-auto" icon={<RotateCcw className="size-3.5" />} onClick={() => reopen.mutate()}>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="ml-auto"
+                  icon={<RotateCcw className="size-3.5" />}
+                  onClick={() => reopen.mutate()}
+                >
                   {t('review.reopen')}
                 </Button>
               )}
@@ -181,7 +235,9 @@ export function ItemDrawer({ itemId, onClose }: { itemId: number | null; onClose
               {Object.entries(d.item.meta).map(([k, v]) => (
                 <div key={k} className="contents">
                   <dt className="font-mono text-ink-3">{k}</dt>
-                  <dd className="truncate text-ink-2">{typeof v === 'string' ? v : JSON.stringify(v)}</dd>
+                  <dd className="truncate text-ink-2">
+                    {typeof v === 'string' ? v : JSON.stringify(v)}
+                  </dd>
                 </div>
               ))}
             </dl>
