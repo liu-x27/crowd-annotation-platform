@@ -1,0 +1,37 @@
+{
+  "name": "@crowd/server",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "db:generate": "drizzle-kit generate",
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
+    "migrate:v1": "tsx src/scripts/migrate-v1.ts",
+    "create-admin": "tsx src/scripts/create-admin.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@crowd/shared": "*",
+    "@electric-sql/pglite": "^0.5.8",
+    "@hono/node-server": "^2.1.1",
+    "bcryptjs": "^3.0.3",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.8",
+    "mongodb": "^6.21.0",
+    "pg": "^8.23.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "drizzle-kit": "^0.31.11",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.1"
+  }
+}

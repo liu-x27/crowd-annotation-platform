@@ -1,0 +1,34 @@
+{
+  "name": "crowd-annotation-platform",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Text annotation platform that keeps model drafts and human labels apart: claims with leases, redundancy and agreement, review, LLM pre-labelling, export, and a student model trained on what comes out.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @crowd/server\" \"npm run dev -w @crowd/web\"",
+    "build": "npm run build -w @crowd/web && npm run build -w @crowd/server",
+    "start": "npm run start -w @crowd/server",
+    "test": "npm run test -w @crowd/shared && npm run test -w @crowd/server && npm run test -w @crowd/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "seed:demo": "npm run seed:demo -w @crowd/server --",
+    "migrate:v1": "npm run migrate:v1 -w @crowd/server --",
+    "create-admin": "npm run create-admin -w @crowd/server --",
+    "db:generate": "npm run db:generate -w @crowd/server",
+    "screenshots": "npm run screenshots -w @crowd/web"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "concurrently": "^10.0.5",
+    "typescript": "^7.0.2"
+  }
+}

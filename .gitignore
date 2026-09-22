@@ -1,9 +1,14 @@
 node_modules/
 dist/
+coverage/
+data/
 .env
 .env.local
 *.log
 npm-debug.log*
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
 .vite/
+test-results/
+playwright-report/
