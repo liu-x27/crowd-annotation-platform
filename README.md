@@ -13,6 +13,11 @@ React + Ant Design, Node/Express, MongoDB.
 
 ## What it does
 
+The whole loop is: **an admin imports samples and assigns them → an annotator labels a
+queue, correcting model drafts rather than starting cold → a reviewer passes over the
+submissions → the accepted labels export as a dataset**, optionally training a student
+model on the way out. Everything below is one of those five steps.
+
 **Tasks and samples.** An admin creates a classification or NER task, imports samples
 from a file, and assigns ranges of them to annotators. Each annotator gets a queue and a
 `next-sample` endpoint that serves it.
@@ -87,6 +92,23 @@ and the second `cd` is relative to the root, not to `backend`.
 
 On Windows, `./start-all.ps1` checks the MongoDB service, checks Ollama, and brings both
 halves up in separate windows.
+
+### The first admin
+
+There is no API that creates one. `POST /auth/register` hard-codes `role: 'annotator'`
+so a client cannot promote itself, and every admin route sits behind `adminOnly`, so a
+fresh database has no way in. That is the right default and it is also a dead end on
+first run, so: register through the UI at `:5173`, then promote that row once.
+
+```bash
+mongosh crowd_platform --eval 'db.users.updateOne({username:"<you>"},{$set:{role:"admin"}})'
+```
+
+Registering first rather than inserting a user directly is deliberate — passwords are
+bcrypt hashes at cost 10, and `/auth/register` is what produces a valid one.
+
+Then, as that admin: create a task, import a CSV or JSON file of samples, and assign
+ranges of them to annotators.
 
 | Variable | |
 |---|---|
