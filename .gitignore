@@ -1,7 +1,10 @@
 node_modules/
 dist/
 coverage/
-data/
+# instance data (embedded Postgres, migration reports) — anchored, so that
+# source folders named "data" (apps/web/src/features/data) are not ignored
+/data/
+/data-*/
 .env
 .env.local
 *.log
