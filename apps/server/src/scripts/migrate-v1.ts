@@ -26,7 +26,9 @@ const { values } = parseArgs({
 });
 
 const config = loadConfig();
-if (values['data-dir']) config.dataDir = path.resolve(values['data-dir']);
+// npm runs workspace scripts from apps/server; resolve against where the command was typed.
+if (values['data-dir'])
+  config.dataDir = path.resolve(process.env.INIT_CWD ?? process.cwd(), values['data-dir']);
 
 const stringify = (doc: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(
