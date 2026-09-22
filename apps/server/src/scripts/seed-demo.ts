@@ -17,7 +17,7 @@ import {
   projectSettingsSchema,
   type Span,
 } from '@crowd/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { createContext } from '../app';
 import { loadConfig } from '../config';
 import { rows } from '../db/client';
@@ -165,23 +165,55 @@ async function simulateNer(project: ProjectRow, people: Persona[], truth: Map<st
   }
 }
 
-/** Spread simulated submissions over the last two weeks so the activity chart has a shape. */
+/**
+ * Spread simulated submissions over the last two weeks so the activity chart has a shape,
+ * then keep the timeline coherent: accounts, projects, the import and the drafting run move
+ * to before the first answer (a draft shown to someone must predate their answer), and a
+ * consensus is dated by the answer that completed it. Reviews and training stay at today.
+ */
 async function spreadTimestamps(projectIds: number[]) {
-  const rows = await db
-    .select({ id: annotations.id })
-    .from(annotations)
-    .where(and(inArray(annotations.projectId, projectIds), eq(annotations.source, 'human')))
-    .orderBy(annotations.id);
   const now = Date.now();
-  for (let i = 0; i < rows.length; i++) {
-    const progress = i / rows.length;
-    const daysAgo = Math.max(0, 13 * (1 - progress) + (r() - 0.5) * 1.5);
-    const at = new Date(now - daysAgo * 86_400_000 - r() * 3_600_000 * 6);
-    await db
-      .update(annotations)
-      .set({ submittedAt: at, updatedAt: at, createdAt: at })
-      .where(eq(annotations.id, rows[i]!.id));
+  // Per project, so each one's activity spans the fortnight rather than queueing behind
+  // the projects seeded before it.
+  for (const projectId of projectIds) {
+    const rows = await db
+      .select({ id: annotations.id })
+      .from(annotations)
+      .where(and(eq(annotations.projectId, projectId), eq(annotations.source, 'human')))
+      .orderBy(annotations.id);
+    for (let i = 0; i < rows.length; i++) {
+      const progress = i / rows.length;
+      const daysAgo = Math.max(0, 13 * (1 - progress) + (r() - 0.5) * 1.5);
+      const at = new Date(now - daysAgo * 86_400_000 - r() * 3_600_000 * 6);
+      await db
+        .update(annotations)
+        .set({ submittedAt: at, updatedAt: at, createdAt: at })
+        .where(eq(annotations.id, rows[i]!.id));
+    }
   }
+
+  // The earliest answer is at most ~14 days old; setup goes 15 days back, drafting 14d 20h.
+  const ids = sql.join(
+    projectIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  await db.execute(sql`update users set created_at = created_at - interval '15 days'`);
+  await db.execute(sql`update projects set created_at = created_at - interval '15 days',
+    updated_at = updated_at - interval '15 days' where id in (${ids})`);
+  await db.execute(sql`update items set created_at = created_at - interval '15 days'
+    where project_id in (${ids})`);
+  await db.execute(sql`update annotations set created_at = created_at - interval '14 days 20 hours',
+    updated_at = updated_at - interval '14 days 20 hours',
+    submitted_at = submitted_at - interval '14 days 20 hours'
+    where source = 'llm' and project_id in (${ids})`);
+  await db.execute(sql`update jobs set created_at = created_at - interval '14 days 20 hours',
+    started_at = started_at - interval '14 days 20 hours',
+    finished_at = finished_at - interval '14 days 20 hours'
+    where kind = 'prelabel' and project_id in (${ids})`);
+  await db.execute(sql`update items i set finalized_at = (
+      select max(a.submitted_at) from annotations a
+      where a.item_id = i.id and a.source = 'human' and a.status = 'submitted')
+    where i.final_source = 'consensus' and i.project_id in (${ids})`);
 }
 
 async function main() {
