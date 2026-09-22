@@ -151,4 +151,7 @@ inter-annotator agreement to report, and the platform implements no Cohen's Kapp
 multi-round review queue with a single reviewer catches that reviewer's own second-pass
 disagreements, which is worth something and is not the same thing.
 
-The screenshots above are from that working deployment.
+The screenshots above are from a demo instance, not that one — the sidebar says
+`DEMO v0.1` and the task list has five tasks, against the fourteen described above. Its
+samples are synthetic sentences written for the screenshots. The real corpora are other
+people's licensed text and my own generated sets, neither of which belongs in a README.
