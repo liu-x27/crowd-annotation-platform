@@ -1,11 +1,12 @@
 # crowd-annotation-platform
 
-A crowdsourced text-annotation service: admin and annotator roles, per-annotator sample
-assignment, multi-round review, local LLM pre-labelling, and CSV/JSON dataset export.
+A text-annotation platform for assigning samples, correcting model drafts, reviewing
+submissions, and exporting labelled datasets: admin and annotator roles, per-annotator
+assignment, multi-round review, local LLM pre-labelling, CSV/JSON export, and a
+dashboard that trains a student model on what comes out.
 
-It exists because a knowledge-distillation study needed labelled corpora that did not
-exist yet. This is the upstream half of that work, and the distillation dashboard below
-is where annotation and training meet.
+It was built to produce corpora that did not exist yet, which is why model drafts and
+human labels are stored as separate sources rather than merged.
 
 React + Ant Design, Node/Express, MongoDB.
 
@@ -59,14 +60,15 @@ history would need the trainer to report it, which it does not.
 
 **14 tasks, 94,469 samples, 135,835 annotations.** Most of that is bulk import: four
 public corpora — TNEWS 15-class (47,345), AGNews (19,998), shopping sentiment (20,000)
-and SemEval-2016 stance (4,063) — brought in with their existing gold labels for the
-scale-up experiments.
+and SemEval-2016 stance (4,063) — brought in with their existing gold labels, to see
+whether the import, assignment and export paths held up at that size.
 
 The part that went through the review queue a sample at a time is **3,063 samples**,
-across five 500-item classification tasks and four NER sets — two of those NER sets are
-250 and 210 items, the other two are 41-item trial runs. The largest of those is 500 samples over five classes,
-drafted by a local model and then checked here one at a time — which is the workflow this
-platform exists for, and the reason the human and model labels stay separate.
+across ten tasks: five of 500 classification items each, four NER sets of 250, 210, 41
+and 41, and one 21-item scratch task — 3,063 exactly, which is also 94,469 minus the
+91,406 imported. The largest of them is 500 samples over five classes, drafted by a local
+model and then checked here one at a time, which is the workflow this platform exists
+for.
 
 **41,623 of the annotations are LLM pre-labels**, carrying a separate flag and never
 merged into the human ones. Keeping them apart is what lets a task be exported as
@@ -139,15 +141,14 @@ The four collections and their relationships are in
 ## Status
 
 Built as an undergraduate thesis project, and it ran in earnest for exactly one job:
-producing the corpora a distillation study needed. It did that job. It is
-not hardened past it — no rate limiting, no password policy, and the JWT secret falls
-back to a development default if you do not set one.
+producing the corpora it was built for. It did that job. It is not hardened past it — no
+rate limiting, no password policy, and the JWT secret falls back to a development default
+if you do not set one. Treat it as a local tool, not a deployment.
 
 **One person did the annotating.** Two annotator accounts exist and hold seventeen
 annotations between them; everything else is under the admin account. So there is no
-inter-annotator agreement to report, and the platform implements no Cohen's Kappa — a
-gap the thesis names in its own limitations rather than one this README is working
-around. A multi-round review queue with a single reviewer catches a reviewer's own
-second-pass disagreements, which is worth something and is not the same thing.
+inter-annotator agreement to report, and the platform implements no Cohen's Kappa. A
+multi-round review queue with a single reviewer catches that reviewer's own second-pass
+disagreements, which is worth something and is not the same thing.
 
 The screenshots above are from that working deployment.
