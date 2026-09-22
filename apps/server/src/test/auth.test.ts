@@ -142,3 +142,24 @@ describe('request hygiene', () => {
     }
   });
 });
+
+describe('demo mode', () => {
+  it('is off unless configured', async () => {
+    const res = await h.anon().post('/api/auth/demo', { username: 'admin' });
+    expect(res.status).toBe(404);
+    expect((await h.anon().get('/api/auth/state')).body.demo).toBeNull();
+  });
+
+  it('lets anyone enter as an enabled account when it is on', async () => {
+    const demo = await harness({ demoMode: true });
+    try {
+      const state = await demo.anon().get('/api/auth/state');
+      expect(state.body.demo.map((u: { username: string }) => u.username)).toEqual(['admin']);
+      const c = demo.anon();
+      expect((await c.post('/api/auth/demo', { username: 'admin' })).status).toBe(200);
+      expect((await c.get('/api/me')).body.role).toBe('admin');
+    } finally {
+      await demo.close();
+    }
+  });
+});

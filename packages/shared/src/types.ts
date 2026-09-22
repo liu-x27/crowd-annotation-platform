@@ -36,6 +36,8 @@ export interface AuthState {
   /** True only while the database has no users: the first account becomes the admin. */
   needsSetup: boolean;
   registrationOpen: boolean;
+  /** Only on instances started with DEMO_MODE=true: accounts that can be entered without a password. */
+  demo: { username: string; displayName: string | null; role: Role }[] | null;
   user: Me | null;
 }
 

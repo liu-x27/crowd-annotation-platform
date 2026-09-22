@@ -7,7 +7,7 @@ import {
   updateMeSchema,
   updateUserSchema,
 } from '@crowd/shared';
-import { eq, sql } from 'drizzle-orm';
+import { eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
@@ -66,12 +66,29 @@ export function authRoutes() {
       .get('/state', async (c) => {
         const { db, config } = c.var.deps;
         const [anyone] = await db.select({ id: users.id }).from(users).limit(1);
+        const demo = config.demoMode
+          ? (await db.select().from(users).where(isNull(users.disabledAt)).orderBy(users.id)).map(
+              (u) => ({ username: u.username, displayName: u.displayName, role: u.role }),
+            )
+          : null;
         const state: AuthState = {
           needsSetup: !anyone,
           registrationOpen: config.allowRegistration && !!anyone,
+          demo,
           user: c.var.user ? toMe(c.var.user) : null,
         };
         return c.json(state);
+      })
+
+      // Demo instances only (DEMO_MODE=true): enter as any enabled account without a password.
+      .post('/demo', async (c) => {
+        const { db, config } = c.var.deps;
+        if (!config.demoMode) throw new AppError(404, 'not_found', 'No such endpoint.');
+        const { username } = await body(c, loginSchema.pick({ username: true }));
+        const user = await findUserByName(db, username);
+        if (!user || user.disabledAt) throw new AppError(404, 'not_found', 'No such demo account.');
+        await startSession(c, user);
+        return c.json(toMe(user));
       })
 
       // The first account becomes the admin. Only possible while there are no users at all,
