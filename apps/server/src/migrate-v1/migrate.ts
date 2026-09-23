@@ -1,17 +1,19 @@
 import {
+  answerKey,
+  canonicalSpans,
   cpLength,
   type LabelDef,
   labelsFromNames,
   projectSettingsSchema,
   reanchorSpan,
   type Span,
-  spanSetKey,
   utf16ToCp,
   validateSpans,
 } from '@crowd/shared';
 import { sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { annotations, assignments, items, projects, users } from '../db/schema';
+import { finalColumns } from '../lib/answers';
 import { textHash } from '../modules/items/service';
 
 // ── v1 shapes (MongoDB documents, ids already stringified) ───────────────────
@@ -154,7 +156,7 @@ export function convertSpans(
     placed.push(span);
   }
   const check = validateSpans(text, placed, labels);
-  return check.ok ? check.spans.map(({ start, end, label }) => ({ start, end, label })) : [];
+  return check.ok ? canonicalSpans(check.spans) : [];
 }
 
 /** Collapse sorted sequence numbers into [from, to] runs. */
@@ -378,9 +380,7 @@ export async function migrateV1(
               if (p.imported && opts.finalizeImported) final = { ...p.imported, source: 'import' };
               else if (
                 submitted.length &&
-                new Set(
-                  submitted.map((x) => (type === 'ner' ? spanSetKey(x.spans ?? []) : x.label)),
-                ).size === 1
+                new Set(submitted.map((x) => answerKey(type, x))).size === 1
               ) {
                 final = {
                   label: submitted[0]!.label,
@@ -397,10 +397,7 @@ export async function migrateV1(
                 textHash: textHash(p.sample.content),
                 meta: { ...(p.sample.meta ?? {}), v1Id: p.sample._id },
                 humanCount: submitted.length,
-                finalLabel: final?.label ?? null,
-                finalSpans: final ? (type === 'ner' ? (final.spans ?? []) : null) : null,
-                finalSource: final?.source ?? null,
-                finalizedAt: final?.at ?? null,
+                ...(final ? finalColumns(type, final, final.source, null, final.at) : {}),
                 createdAt: p.sample.createdAt ? new Date(p.sample.createdAt) : new Date(),
               };
             }),

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  canonicalSpans,
   defaultHotkey,
   defaultLabelColor,
   type FinalSource,
@@ -26,6 +27,7 @@ import {
   type UserRow,
   users,
 } from '../../db/schema';
+import { answerSql, finalAnswerSql, finalColumns } from '../../lib/answers';
 import { annotationView, finalView, iso } from '../../lib/dto';
 import { AppError, notFound } from '../../lib/errors';
 
@@ -119,8 +121,7 @@ export async function importBatch(
       const kept = it.spans.filter((s) => names.has(s.label));
       if (kept.length !== it.spans.length) labelsDropped++;
       const check = validateSpans(text, kept, [...names]);
-      if (check.ok)
-        spans = check.spans.map(({ start, end, label: l }) => ({ start, end, label: l }));
+      if (check.ok) spans = canonicalSpans(check.spans);
       else {
         labelsDropped++;
         warn(`row ${idx + 1}: spans dropped (${check.error})`);
@@ -183,12 +184,7 @@ export async function importBatch(
             textHash: p.hash,
             meta: p.meta,
             ...(input.finalizeImported && (p.label != null || p.spans != null)
-              ? {
-                  finalLabel: p.label,
-                  finalSpans: p.spans,
-                  finalSource: 'import' as const,
-                  finalizedAt: new Date(),
-                }
+              ? finalColumns(project.type, p, 'import', null)
               : {}),
           })),
         )
@@ -264,7 +260,7 @@ export async function listItems(
     );
   }
   if (q.disagreement) {
-    conds.push(sql`(select count(distinct coalesce(a.label, a.spans::text)) from annotations a
+    conds.push(sql`(select count(distinct ${answerSql('a')}) from annotations a
       where a.item_id = i.id and a.source = 'human' and a.status = 'submitted') > 1`);
   }
   if (q.annotator) {
@@ -290,7 +286,7 @@ export async function listItems(
     case 'disagrees':
       conds.push(sql`i.finalized_at is not null and exists (select 1 from annotations d where d.item_id = i.id
         and d.source = 'llm' and d.status = 'submitted'
-        and coalesce(d.label, '') || coalesce(d.spans::text, '') <> coalesce(i.final_label, '') || coalesce(i.final_spans::text, ''))`);
+        and ${answerSql('d')} <> ${finalAnswerSql('i')})`);
       break;
   }
   const where = sql.join(conds, sql` and `);
@@ -340,7 +336,7 @@ export async function listItems(
       left join lateral (
         select array_agg(coalesce(a.label, '') order by a.id) filter (where a.status = 'submitted') as labels,
                bool_or(a.flagged) as flagged,
-               count(distinct coalesce(a.label, a.spans::text)) filter (where a.status = 'submitted') as distinct_answers
+               count(distinct ${answerSql('a')}) filter (where a.status = 'submitted') as distinct_answers
         from annotations a where a.item_id = i.id and a.source = 'human'
       ) h on true
       where ${where}

@@ -106,10 +106,15 @@ export function withText(text: string, spans: readonly Span[]): SpanWithText[] {
     }));
 }
 
+/** The order spans are kept in: by start, then end, then label. */
+export function compareSpans(a: Span, b: Span): number {
+  return a.start - b.start || a.end - b.end || a.label.localeCompare(b.label);
+}
+
 /** Order-independent identity of a span set. */
 export function spanSetKey(spans: readonly Span[]): string {
   return [...spans]
-    .sort((a, b) => a.start - b.start || a.end - b.end || a.label.localeCompare(b.label))
+    .sort(compareSpans)
     .map((s) => `${s.start}:${s.end}:${s.label}`)
     .join('|');
 }

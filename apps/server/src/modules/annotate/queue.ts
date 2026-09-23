@@ -1,11 +1,12 @@
 import {
+  answerKey,
   type ClaimView,
+  canonicalSpans,
   type HistoryEntry,
   type ProjectType,
   type QueueView,
   type Span,
   type SubmitAnnotationInput,
-  spanSetKey,
   unitHash,
   validateSpans,
   withText,
@@ -21,6 +22,7 @@ import {
   type UserRow,
   users,
 } from '../../db/schema';
+import { finalizeOpenItem } from '../../lib/answers';
 import { iso, spansView, userRef } from '../../lib/dto';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../lib/errors';
 
@@ -292,10 +294,7 @@ export function validateAnswer(
   if (!input.spans) throw badRequest('Spans are required (send an empty list for "no entities").');
   const check = validateSpans(text, input.spans, labelNames);
   if (!check.ok) throw new AppError(400, 'invalid_spans', check.error);
-  return {
-    label: null,
-    spans: check.spans.map(({ start, end, label }) => ({ start, end, label })),
-  };
+  return { label: null, spans: canonicalSpans(check.spans) };
 }
 
 /**
@@ -319,38 +318,9 @@ export async function maybeAutoFinalize(
       ),
     );
   if (subs.length < project.settings.redundancy || subs.some((s) => s.flagged)) return false;
-  const keys = new Set(
-    subs.map((s) => (project.type === 'ner' ? spanSetKey(s.spans ?? []) : String(s.label))),
-  );
+  const keys = new Set(subs.map((s) => answerKey(project.type, s)));
   if (keys.size !== 1) return false;
-  const first = subs[0]!;
-  const done = await tx
-    .update(items)
-    .set({
-      finalLabel: project.type === 'classification' ? first.label : null,
-      finalSpans: project.type === 'ner' ? (first.spans ?? []) : null,
-      finalSource: 'consensus',
-      finalizedAt: new Date(),
-      finalizedBy: null,
-    })
-    .where(and(eq(items.id, itemId), sql`${items.finalizedAt} is null`))
-    .returning({ id: items.id });
-  if (done.length) await dropOpenClaims(tx, itemId);
-  return done.length > 0;
-}
-
-/** Once an item is final, open claims on it are moot. Returned work is left for the record. */
-export async function dropOpenClaims(tx: DbOrTx, itemId: number): Promise<void> {
-  await tx
-    .delete(annotations)
-    .where(
-      and(
-        eq(annotations.itemId, itemId),
-        eq(annotations.source, 'human'),
-        eq(annotations.status, 'claimed'),
-        sql`${annotations.submittedAt} is null`,
-      ),
-    );
+  return finalizeOpenItem(tx, project.type, itemId, subs[0]!, 'consensus', null);
 }
 
 async function ownAnnotation(tx: DbOrTx, annotationId: number, user: UserRow) {

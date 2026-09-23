@@ -1,4 +1,5 @@
 import type { LlmProviderId, LlmSettings, PrelabelJobInput, PreviewRow } from '@crowd/shared';
+import { sameAnswer } from '@crowd/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronDown, Play, Sparkles, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -261,12 +262,7 @@ function PreviewCard({ row }: { row: PreviewRow }) {
   const [open, setOpen] = useState<'raw' | 'prompt' | null>(null);
   const ner = project.type === 'ner';
   const match =
-    row.reference && row.parsed
-      ? ner
-        ? JSON.stringify((row.parsed.spans ?? []).map((s) => [s.start, s.end, s.label])) ===
-          JSON.stringify((row.reference.spans ?? []).map((s) => [s.start, s.end, s.label]))
-        : row.parsed.label === row.reference.label
-      : null;
+    row.reference && row.parsed ? sameAnswer(project.type, row.parsed, row.reference) : null;
   return (
     <div className="rounded-xl border border-line p-4">
       <div className="flex items-start gap-3">

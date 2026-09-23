@@ -1,4 +1,5 @@
 import {
+  canonicalSpans,
   type LlmPreviewInput,
   llmPreviewSchema,
   type PrelabelResult,
@@ -161,7 +162,7 @@ async function draftOne(
       ...base,
       status: 'submitted',
       label: null,
-      spans: p.spans.map(({ start, end, label }) => ({ start, end, label })),
+      spans: canonicalSpans(p.spans),
       error: null,
       unaligned: p.unaligned.length + p.conflicts.length,
       meta:

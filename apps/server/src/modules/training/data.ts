@@ -1,4 +1,4 @@
-import { type Span, spanSetKey, type TrainJobParams } from '@crowd/shared';
+import { type Span, type TrainJobParams, tally } from '@crowd/shared';
 import { sql } from 'drizzle-orm';
 import { type Db, rows } from '../../db/client';
 import type { ProjectRow } from '../../db/schema';
@@ -36,17 +36,9 @@ interface ItemFacts {
 }
 
 function humanMajority(project: ProjectRow, human: ItemFacts['human']): Example | null {
-  if (!human?.length) return null;
-  const votes = new Map<string, { n: number; label: string | null; spans: Span[] | null }>();
-  for (const h of human) {
-    const key = project.type === 'ner' ? spanSetKey(h.spans ?? []) : String(h.label);
-    const v = votes.get(key) ?? { n: 0, label: h.label, spans: h.spans };
-    v.n++;
-    votes.set(key, v);
-  }
-  const ranked = [...votes.values()].sort((a, b) => b.n - a.n);
-  if (ranked.length > 1 && ranked[0]!.n === ranked[1]!.n) return null; // a tie decides nothing
-  return { text: '', label: ranked[0]!.label, spans: ranked[0]!.spans };
+  const t = tally(project.type, human ?? []);
+  if (!t || t.tie) return null; // a tie decides nothing
+  return { text: '', label: t.top.label, spans: t.top.spans };
 }
 
 /**

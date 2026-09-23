@@ -107,6 +107,22 @@ majority, bulk-finalise unanimous items, or *return* one answer with a note — 
 that answer to `rejected`, decrements `human_count`, and makes it the first thing its
 author is served next time.
 
+**One definition of a same answer.** Consensus, the disagreement and draft-overridden
+filters, agreement with the final label and with the draft, anchoring, and training's
+majority vote all ask whether two answers are the same. They ask it through `answerKey`
+(`packages/shared/src/answers.ts`) in JS, or `answerSql` (`apps/server/src/lib/answers.ts`)
+where the database has to count or filter. Two NER answers are the same when they mark the
+same `(start, end, label)` set in any order; SQL can only compare the stored jsonb, so the
+two definitions agree only because every write goes through `canonicalSpans` — sorted,
+without the derived `text`. `answers.test.ts` holds them to each other, and shows that
+without the canonical form the database would count identical answers as disagreeing.
+
+**Finalising never overwrites.** Every path writes the final answer through one function,
+whose UPDATE only matches an item that is still open, so two decisions racing on the same
+item cannot both land. A reviewer finalising an already-final item gets a conflict and is
+told to reopen it. Bulk finalise locks its items before reading their answers, so the
+majority it writes is computed from answers that cannot change under it.
+
 ## Background jobs
 
 `jobs` is the queue. `JobRunner` runs at most one job per kind at a time (each job

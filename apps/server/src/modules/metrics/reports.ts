@@ -1,8 +1,9 @@
 import type { AgreementReport, DraftQuality, Overview, Span, UserRef } from '@crowd/shared';
-import { spanSetKey } from '@crowd/shared';
+import { answerKey } from '@crowd/shared';
 import { inArray, sql } from 'drizzle-orm';
 import { type Db, rows } from '../../db/client';
 import { type ProjectRow, users } from '../../db/schema';
+import { answerSql, finalAnswerSql } from '../../lib/answers';
 import { userRef } from '../../lib/dto';
 import { projectCounts } from '../projects/service';
 import {
@@ -13,9 +14,6 @@ import {
   nerScores,
   spanAgreement,
 } from './stats';
-
-const answerKey = (project: ProjectRow, label: string | null, spans: Span[] | null) =>
-  project.type === 'ner' ? spanSetKey(spans ?? []) : String(label);
 
 async function userRefs(db: Db, ids: number[]): Promise<Map<number, UserRef>> {
   const out = new Map<number, UserRef>();
@@ -108,12 +106,10 @@ export async function overview(db: Db, project: ProjectRow, timeZone: string): P
         percentile_cont(0.5) within group (order by a.duration_ms)
           filter (where a.status = 'submitted' and a.duration_ms is not null) as median_ms,
         avg(case when i.finalized_at is null then null
-                 else (coalesce(a.label, '') || coalesce(a.spans::text, '')
-                       = coalesce(i.final_label, '') || coalesce(i.final_spans::text, ''))::int end)
+                 else (${answerSql('a')} = ${finalAnswerSql('i')})::int end)
           filter (where a.status = 'submitted') as agree_final,
         avg(case when d.id is null then null
-                 else (coalesce(a.label, '') || coalesce(a.spans::text, '')
-                       = coalesce(d.label, '') || coalesce(d.spans::text, ''))::int end)
+                 else (${answerSql('a')} = ${answerSql('d')})::int end)
           filter (where a.status = 'submitted') as agree_draft,
         max(a.submitted_at) as last_at
       from annotations a
@@ -195,8 +191,8 @@ export async function agreement(db: Db, project: ProjectRow): Promise<AgreementR
           agreeSum: 0,
           n: 0,
         };
-        p.xs.push(answerKey(project, x.label, x.spans));
-        p.ys.push(answerKey(project, y.label, y.spans));
+        p.xs.push(answerKey(project.type, x));
+        p.ys.push(answerKey(project.type, y));
         p.agreeSum += agree;
         p.n++;
         pairStats.set(key, p);
@@ -268,8 +264,7 @@ export async function draftQuality(
     db,
     sql`
       select a.draft_shown as shown, count(*)::int as n,
-        avg((coalesce(a.label, '') || coalesce(a.spans::text, '')
-             = coalesce(d.label, '') || coalesce(d.spans::text, ''))::int) as agree
+        avg((${answerSql('a')} = ${answerSql('d')})::int) as agree
       from annotations a
       join annotations d on d.item_id = a.item_id and d.source = 'llm' and d.status = 'submitted'
       where a.project_id = ${project.id} and a.source = 'human' and a.status = 'submitted' and a.draft_shown is not null

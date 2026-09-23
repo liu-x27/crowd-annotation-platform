@@ -169,7 +169,7 @@ job runner, the drafting pipeline and why each piece is the way it is.
 ## Tests
 
 ```bash
-npm test           # 94 tests: shared 16, server 73, web 5
+npm test           # 107 tests: shared 21, server 81, web 5
 npm run typecheck
 npm run lint
 ```
@@ -180,8 +180,10 @@ get the same item, and redundancy 2 never reaches a third person; an expired lea
 the item; a returned answer comes back to its author first; failed model calls are
 recorded as errors, never as labels; an item is never shown its own answer as a worked
 example; no test item ever contributes a training label; the human-only export contains no
-model or imported labels; a v1 bcrypt password still signs in and is upgraded; and the v1
-migration repairs the badge-inflated span. On the web side, span offsets are read from the
+model or imported labels; a v1 bcrypt password still signs in and is upgraded; the v1
+migration repairs the badge-inflated span; the database and the JS agree on which answers
+are the same, so two annotators marking the same entities in a different order are not a
+disagreement; and bulk review never overwrites a decision already made. On the web side, span offsets are read from the
 DOM's data attributes rather than from rendered text length — the v1 bug.
 
 ## Status
@@ -200,7 +202,7 @@ Not tested:
 - **A real Postgres server.** The schema and queries are the same, but locally the suite
   has only run on the embedded Postgres, which serialises everything on one connection.
   The concurrency tests show claims are correct under interleaving; they cannot show
-  `SKIP LOCKED` behaving under true parallel load.
+  `SKIP LOCKED`, or the row locks bulk review takes, behaving under true parallel load.
 - **Load.** No load test. Jobs run in-process, so it is a single-node application by design.
 - **Deployment.** No container image yet; the only deployment exercised is `npm start` on
   one machine.
