@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crowd Annotation</title>
+<meta name="description" content="A text annotation platform for the workflow where a language model drafts labels and people check them, with model drafts stored apart from human labels.">
+<meta property="og:title" content="Crowd Annotation">
+<meta property="og:description" content="Label with a model. Keep what it said separate. Claims with leases, blind audits, review, agreement, and a student model scored on human labels only.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://liu-x27.github.io/crowd-annotation-platform/">
+<meta property="og:image" content="https://liu-x27.github.io/crowd-annotation-platform/brand/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // The app has a light and a dark theme; so does this page. It follows the system until you pick one.
+  (() => {
+    const root = document.documentElement;
+    const KEY = 'crowd-site-theme';
+    let stored = null;
+    try {
+      stored = localStorage.getItem(KEY);
+    } catch {
+      // storage blocked: follow the system
+    }
+    if (stored === 'light' || stored === 'dark') root.dataset.theme = stored;
+    const current = () =>
+      root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.addEventListener('DOMContentLoaded', () => {
+      const button = document.getElementById('theme');
+      const label = () => {
+        const dark = current() === 'dark';
+        button.querySelector('span').textContent = dark ? 'Dark' : 'Light';
+        button.setAttribute('aria-label', `Theme: ${dark ? 'dark' : 'light'}. Switch to ${dark ? 'light' : 'dark'}`);
+      };
+      label();
+      button.addEventListener('click', () => {
+        const next = current() === 'dark' ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try {
+          localStorage.setItem(KEY, next);
+        } catch {
+          // the choice lasts until the page is reloaded
+        }
+        label();
+      });
+      matchMedia('(prefers-color-scheme: dark)').addEventListener('change', label);
+    });
+  })();
+</script>
+<style>
+  /* "Ink on paper, with a highlighter": the app's own tokens, from apps/web/src/styles.css */
+  :root {
+    --bg: #f6f6f3;
+    --surface: #ffffff;
+    --surface-2: #f0f0ec;
+    --text: #17171a;
+    --dim: #4d4d55;
+    --faint: #85858e;
+    --line: #e3e3de;
+    --line-strong: #d2d2cb;
+    --accent: #4c52d6;
+    --accent-soft: color-mix(in oklab, #4c52d6 11%, transparent);
+    --on-accent: #ffffff;
+    --marker: #fcd34d;
+    --on-marker: #17171a;
+    --ok: #16a34a;
+    --bad: #d33a2c;
+    --code-bg: #17171a;
+    --code-text: #f0f0ec;
+    --shadow: 0 1px 2px rgb(20 20 25 / 0.05), 0 2px 8px rgb(20 20 25 / 0.04), 0 24px 56px -28px rgb(20 20 25 / 0.28);
+    --zh: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    --sans: "Inter", system-ui, var(--zh);
+    --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e0e10;
+      --surface: #161619;
+      --surface-2: #1d1d21;
+      --text: #f2f2f3;
+      --dim: #a5a5ae;
+      --faint: #72727b;
+      --line: #29292e;
+      --line-strong: #38383f;
+      --accent: #8d93ff;
+      --accent-soft: color-mix(in oklab, #8d93ff 16%, transparent);
+      --on-accent: #0e0e10;
+      --marker: #e7b93a;
+      --on-marker: #0e0e10;
+      --ok: #3fbf6f;
+      --bad: #f06a5e;
+      --code-bg: #08080a;
+      --code-text: #f2f2f3;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 48px rgb(0 0 0 / 0.55);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e0e10;
+    --surface: #161619;
+    --surface-2: #1d1d21;
+    --text: #f2f2f3;
+    --dim: #a5a5ae;
+    --faint: #72727b;
+    --line: #29292e;
+    --line-strong: #38383f;
+    --accent: #8d93ff;
+    --accent-soft: color-mix(in oklab, #8d93ff 16%, transparent);
+    --on-accent: #0e0e10;
+    --marker: #e7b93a;
+    --on-marker: #0e0e10;
+    --ok: #3fbf6f;
+    --bad: #f06a5e;
+    --code-bg: #08080a;
+    --code-text: #f2f2f3;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 48px rgb(0 0 0 / 0.55);
+    color-scheme: dark;
+  }
+
+  /* what shows in which theme */
+  .only-dark { display: none !important; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .only-dark { display: block !important; }
+    :root:not([data-theme="light"]) span.only-dark { display: inline !important; }
+    :root:not([data-theme="light"]) .only-light { display: none !important; }
+  }
+  :root[data-theme="dark"] .only-dark { display: block !important; }
+  :root[data-theme="dark"] span.only-dark { display: inline !important; }
+  :root[data-theme="dark"] .only-light { display: none !important; }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s, color 0.2s;
+  }
+  a { color: inherit; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--accent); }
+  code, pre { font-family: var(--mono); font-size: 0.86em; }
+  :not(pre) > code {
+    padding: 0.08em 0.36em;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface);
+    white-space: nowrap;
+  }
+  .zh { font-family: var(--zh); }
+  img { max-width: 100%; height: auto; display: block; }
+  mark { background: none; color: inherit; }
+  .hl {
+    background: linear-gradient(transparent 12%, var(--marker) 12%, var(--marker) 92%, transparent 92%);
+    color: var(--on-marker);
+    padding: 0 0.08em;
+    border-radius: 0.08em;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  }
+  @media (max-width: 640px) { :not(pre) > code { white-space: normal; overflow-wrap: anywhere; } }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  @media (max-width: 640px) { .wrap { padding: 0 16px; } }
+
+  /* masthead */
+  .masthead {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 18px 0 14px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .brand .mark { width: 28px; height: 28px; flex: none; }
+  .brand span { font: 600 16px/1 var(--sans); letter-spacing: -0.025em; }
+  .masthead nav { display: flex; align-items: center; gap: 20px; font-size: 13px; font-weight: 500; }
+  .masthead nav a { text-decoration: none; color: var(--dim); }
+  .masthead nav a:hover { color: var(--text); }
+  @media (max-width: 800px) { .masthead nav a:not(.gh) { display: none; } }
+  #theme {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 11px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--dim);
+    font: 500 12px/1 var(--sans);
+  }
+  #theme:hover { color: var(--text); border-color: var(--accent); }
+  #theme .dot { width: 10px; height: 10px; border-radius: 3px; background: var(--marker); display: inline-block; }
+
+  /* hero */
+  .hero { padding: 72px 0 40px; display: grid; gap: 26px; }
+  .eyebrow { font: 500 13px/1.4 var(--mono); color: var(--faint); }
+  .hero h1 {
+    margin: 0;
+    font: 600 clamp(40px, 6.6vw, 78px)/1.06 var(--sans);
+    letter-spacing: -0.035em;
+    max-width: 17ch;
+  }
+  .lede { max-width: 64ch; font-size: 19px; color: var(--dim); margin: 0; }
+  .lede strong { color: var(--text); font-weight: 600; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 17px; border-radius: 10px;
+    font-size: 15px; font-weight: 500; text-decoration: none;
+    border: 1px solid var(--line-strong); background: var(--surface);
+  }
+  .btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btn:hover { border-color: var(--accent); }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+  .badges li {
+    font: 12px/1 var(--mono); padding: 6px 9px;
+    border: 1px solid var(--line); border-radius: 999px; color: var(--dim); background: var(--surface);
+  }
+
+  /* window frame around a screenshot */
+  .window {
+    border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .window-bar {
+    display: flex; align-items: center; gap: 7px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    font: 12px/1 var(--mono); color: var(--faint);
+  }
+  .window-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); display: inline-block; }
+  .window-bar i:first-child { background: var(--marker); }
+  .window-bar span { margin-left: 8px; }
+  .caption { font-size: 14px; color: var(--faint); margin: 12px 2px 0; max-width: 82ch; }
+
+  /* sections */
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  .kicker { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+  .kicker b { font: 500 13px/1 var(--mono); color: var(--accent); }
+  .kicker span { font: 500 13px/1 var(--sans); color: var(--dim); }
+  h2 {
+    margin: 0 0 18px;
+    font: 600 clamp(30px, 4vw, 44px)/1.12 var(--sans);
+    letter-spacing: -0.03em; max-width: 24ch;
+  }
+  .prose { max-width: 66ch; color: var(--dim); font-size: 17px; }
+  .prose p { margin: 0 0 14px; }
+  .prose strong { color: var(--text); font-weight: 600; }
+
+  .grid { display: grid; gap: 16px; }
+  .grid > * { min-width: 0; }
+  .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 900px) { .g3, .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 600px) { .g2, .g3, .g4 { grid-template-columns: 1fr; } }
+
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    padding: 20px;
+  }
+  .card h3 { margin: 0 0 6px; font: 600 16px/1.3 var(--sans); letter-spacing: -0.01em; }
+  .card p { margin: 0; color: var(--dim); font-size: 15px; }
+  .card .tag { font: 12px/1 var(--mono); color: var(--faint); margin-bottom: 12px; display: block; }
+  .card strong { color: var(--text); font-weight: 600; }
+
+  /* the four sources */
+  .src { border-top: 2px solid var(--text); padding-top: 14px; }
+  .src code { border: 0; background: none; padding: 0; font-size: 15px; font-weight: 500; color: var(--accent); }
+  .src p { margin: 8px 0 0; color: var(--dim); font-size: 15px; }
+  .rule-line {
+    margin-top: 28px; padding: 16px 20px; border-left: 3px solid var(--marker);
+    background: var(--surface); color: var(--dim); max-width: 80ch; border-radius: 0 10px 10px 0;
+  }
+  .rule-line strong { color: var(--text); }
+
+  /* numbers */
+  .stat { border-top: 1px solid var(--line-strong); padding-top: 16px; }
+  .stat .n { font: 600 clamp(40px, 5vw, 60px)/1 var(--sans); letter-spacing: -0.04em; }
+  .stat .n small { font-size: 0.42em; color: var(--dim); letter-spacing: -0.01em; margin-left: 3px; font-weight: 500; }
+  .stat .n.hot { color: var(--accent); }
+  .stat p { margin: 10px 0 0; color: var(--dim); font-size: 15px; }
+  .fineprint { margin-top: 26px; font-size: 14px; color: var(--faint); max-width: 82ch; }
+
+  /* ledger: what v1 recorded, what v2 does */
+  .ledger { list-style: none; margin: 28px 0 0; padding: 0; border-top: 1px solid var(--line-strong); }
+  .ledger li {
+    display: grid; grid-template-columns: 3rem minmax(0, 1.05fr) minmax(0, 1.2fr); gap: 20px;
+    padding: 16px 0; border-bottom: 1px solid var(--line);
+  }
+  .ledger .head { padding: 10px 0; font: 500 12px/1.3 var(--mono); color: var(--faint); }
+  .ledger .no { font: 500 13px/1.6 var(--mono); color: var(--accent); }
+  .ledger .what { color: var(--text); font-size: 15px; }
+  .ledger b { display: block; font-weight: 600; margin-bottom: 2px; }
+  .ledger .how { color: var(--dim); font-size: 15px; }
+  @media (max-width: 700px) {
+    .ledger li { grid-template-columns: 2.2rem minmax(0, 1fr); }
+    .ledger .how { grid-column: 2; }
+    .ledger .head span:last-child { display: none; }
+  }
+
+  /* the loop */
+  .path { margin-top: 30px; overflow-x: auto; }
+  .path svg { min-width: 820px; width: 100%; height: auto; }
+
+  pre.term {
+    margin: 0; padding: 18px 20px; overflow-x: auto;
+    background: var(--code-bg); color: var(--code-text);
+    border-radius: 10px; font-size: 13px; line-height: 1.7;
+  }
+  pre.term .p { color: #85858e; }
+  pre.term .k { color: #a3a8ff; }
+  pre.term .y { color: #fcd34d; }
+
+  /* tested / not tested */
+  .checks { list-style: none; margin: 0; padding: 0; }
+  .checks li { position: relative; padding: 10px 0 10px 26px; border-bottom: 1px solid var(--line); color: var(--dim); font-size: 15px; }
+  .checks li::before { position: absolute; left: 2px; top: 10px; font: 600 14px/1.6 var(--mono); }
+  .checks.yes li::before { content: "✓"; color: var(--ok); }
+  .checks.no li::before { content: "–"; color: var(--bad); }
+  .checks b { color: var(--text); font-weight: 600; }
+  h3.col { margin: 0 0 6px; font: 600 15px/1.3 var(--sans); }
+
+  /* gallery */
+  .shot { margin: 0; }
+  .shot .frame { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); aspect-ratio: 16 / 10; }
+  .shot .frame img { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+  .shot figcaption { margin-top: 10px; font-size: 14px; color: var(--dim); }
+  .shot figcaption b { color: var(--text); font-weight: 600; }
+
+  footer { padding: 40px 0 64px; border-top: 1px solid var(--line-strong); color: var(--faint); font-size: 14px; }
+  footer .row { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <a class="brand" href="#top" aria-label="Crowd Annotation home"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--text)"/><rect x="7" y="17" width="18" height="6" rx="2" fill="var(--marker)"/><path d="M8 12h16M8 20h9" stroke="var(--bg)" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg><span>Crowd Annotation</span></a>
+    <nav aria-label="Sections">
+      <a href="#rewrite">Why a rewrite</a>
+      <a href="#loop">The loop</a>
+      <a href="#claims">Claims</a>
+      <a href="#status">Tested</a>
+      <a href="#start">Start</a>
+      <a class="gh" href="https://github.com/liu-x27/crowd-annotation-platform">GitHub ↗</a>
+      <button id="theme" type="button"><i class="dot" aria-hidden="true"></i><span>Light</span></button>
+    </nav>
+  </header>
+
+  <main id="top">
+    <div class="hero">
+      <div class="eyebrow">An open-source text annotation platform · TypeScript · Postgres</div>
+      <h1>Label with a model. Keep <mark class="hl">what it said</mark> separate.</h1>
+      <p class="lede">
+        A labelling tool for the workflow where a language model drafts labels and people check them.
+        Annotators are served one item at a time with the draft as a suggestion, a reviewer settles
+        disagreements, and the result trains a small model that is scored on human labels only. The
+        forms are the easy part. The hard part is keeping the record honest: for every label, <strong>whether
+        a person or a model produced it, and whether the person checked the draft or just accepted it</strong>.
+      </p>
+      <div class="ctas">
+        <a class="btn primary" href="https://github.com/liu-x27/crowd-annotation-platform">View on GitHub</a>
+        <a class="btn" href="#start">Quick start</a>
+        <a class="btn" href="https://github.com/liu-x27/crowd-annotation-platform/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+      </div>
+      <ul class="badges" aria-label="Built with">
+        <li>Hono · Drizzle</li><li>Postgres · PGlite</li><li>React 19 · Tailwind 4</li>
+        <li>Ollama · Claude · OpenAI-compatible</li><li>FOR UPDATE SKIP LOCKED</li><li>English · 中文</li><li>107 tests · CI</li>
+      </ul>
+
+      <div>
+        <div class="window">
+          <div class="window-bar"><i></i><i></i><i></i><span class="only-light">localhost:4000 — annotating, light theme</span><span class="only-dark">localhost:4000 — project overview, dark theme, Chinese</span></div>
+          <img class="only-light" src="screenshots/annotate.png" width="2880" height="1800" alt="Annotating a headline, with the model's draft marked as a suggestion.">
+          <img class="only-dark" src="screenshots/overview-dark-zh.png" width="2880" height="1800" alt="The project overview in Chinese, dark theme: item counts, progress and label distribution.">
+        </div>
+        <p class="caption">
+          <span class="only-light">One headline to classify. The model’s draft is on the button it chose, marked as a draft, and the
+          number keys pick a label.</span><span class="only-dark">The same project’s overview in Chinese and the dark theme: items, final labels,
+          the review backlog, human answers and drafts.</span> A seeded demo instance; the switch at the top right swaps the theme here too.
+        </p>
+      </div>
+    </div>
+
+    <section id="problem">
+      <div class="kicker"><b>01</b><span>The problem</span></div>
+      <h2>None of it fails loudly. You get a plausible label and no error.</h2>
+      <div class="prose">
+        <p>
+          A tool like this can be wrong in a way that looks exactly like working. A model call fails and
+          something still lands in the label column. A person clicks the suggested answer without reading
+          the text. An accuracy figure is computed against labels the model itself wrote. Every row looks
+          like a label.
+        </p>
+        <p>
+          So the design starts from one rule: <strong>model drafts, human answers and imported labels are
+          separate sources throughout</strong>, and every statistic and every export names the source it
+          used. Nothing merges them silently.
+        </p>
+      </div>
+    </section>
+
+    <section id="rewrite">
+      <div class="kicker"><b>02</b><span>Why a rewrite</span></div>
+      <h2>v1 looked fine. Its own database said otherwise.</h2>
+      <div class="prose">
+        <p>
+          This is v2. <a href="https://github.com/liu-x27/crowd-annotation-platform/tree/v1">v1</a> ran for one
+          real labelling job. Migrating its database into v2, which forced every record through v2’s
+          checks, showed where it had been quietly recording the wrong thing.
+        </p>
+      </div>
+      <ol class="ledger">
+        <li class="head"><span></span><span>what v1 recorded</span><span>what v2 does</span></li>
+        <li><span class="no">01</span><span class="what"><b>Failures became labels.</b>A reply with no label, or a failed request, was saved as the task’s first label; a reply naming two labels counted as whichever came first in the list.</span><span class="how">A failed or unparseable call is an <code>error</code> row that keeps the raw reply. The parser accepts exactly one allowed label, or entities it can place on the text.</span></li>
+        <li><span class="no">02</span><span class="what"><b>A confidence nobody measured.</b>Drafts the platform wrote carried 0.9 whatever the model said: 2,274 of them.</span><span class="how">Drafts store no confidence: none of the providers reports one, and v2 doesn’t invent it.</span></li>
+        <li><span class="no">03</span><span class="what"><b>Duplicate drafts.</b>479 surplus drafts, and on 99 items they disagreed, so “the model’s label” depended on which row a query returned.</span><span class="how">Partial unique indexes allow one draft per item, one imported label per item, one answer per person per item.</span></li>
+        <li><span class="no">04</span><span class="what"><b>Offsets that counted the badges.</b>NER offsets came from a DOM range that included the label badges drawn inside spans: 3 of 1,559 stored spans pointed at the wrong characters.</span><span class="how">Offsets come from data attributes on each character, in code points, and the server re-checks them and derives the span text itself.</span></li>
+        <li><span class="no">05</span><span class="what"><b>Saving the assignment dialog moved people’s work.</b>It showed every assignment as items 1…N and wrote that back, so one save could move an annotator from 201–400 to 1–200 and take those items from whoever held them.</span><span class="how">Ranges are stored and shown as ranges. They limit who is served what; exclusivity comes from claims.</span></li>
+        <li><span class="no">06</span><span class="what"><b>Exports weren’t filtered.</b>Its README promised human-only and model-only exports; the endpoint wrote every annotation of every source into one file.</span><span class="how">Every export names its label source: <code>final</code>, <code>human</code>, <code>llm</code>, <code>import</code> or all.</span></li>
+        <li><span class="no">07</span><span class="what"><b>No claims.</b>Where items were not assigned, everyone drew from one pool, and two people could be served the same item.</span><span class="how">Items are claimed under a lease with <code>FOR UPDATE SKIP LOCKED</code>.</span></li>
+      </ol>
+
+      <div class="grid g4" style="margin-top: 44px">
+        <div class="stat"><div class="n hot">91</div><p>of the 3,063 labels v1’s README said went through review one at a time were made at a human pace.</p></div>
+        <div class="stat"><div class="n">2,274</div><p>drafts carrying a confidence of 0.9 that no model had reported.</p></div>
+        <div class="stat"><div class="n">99</div><p>items whose duplicate drafts disagreed with each other, among 479 surplus drafts.</p></div>
+        <div class="stat"><div class="n">3<small>/ 1,559</small></div><p>stored spans pointing at the wrong characters, repaired in migration.</p></div>
+      </div>
+      <p class="rule-line">
+        <strong>A correction to v1’s README.</strong> It said 3,063 samples went through the review queue a sample at a
+        time. v1 stored every non-draft label as a human annotation, including gold labels written by import
+        scripts. Counting only those created at a human pace, fewer than 100 in the same minute for the same task,
+        leaves <strong>91</strong>. The other 94,121 arrived in bulk and are migrated as imported labels, not human ones.
+        <a href="https://github.com/liu-x27/crowd-annotation-platform/blob/main/docs/MIGRATING_FROM_V1.md">The rule and the full reconciliation.</a>
+      </p>
+    </section>
+
+    <section id="loop">
+      <div class="kicker"><b>03</b><span>The loop</span></div>
+      <h2>Four sources, and nothing merges them.</h2>
+      <div class="prose">
+        <p>
+          Items are imported, a model drafts labels, annotators label with the draft as a suggestion, answers
+          that disagree go to review, and final labels train a student model and export. Each step writes its
+          own kind of row.
+        </p>
+      </div>
+      <div class="path">
+        <svg viewBox="0 0 1040 132" role="img" aria-labelledby="loop-title">
+          <title id="loop-title">Items are imported, an LLM drafts, annotators answer with the draft shown or hidden, disagreements go to review, and final labels train a student model and are exported.</title>
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--faint)"/>
+            </marker>
+          </defs>
+          <g font-family="Inter, system-ui, sans-serif" font-size="14">
+            <g stroke="var(--line-strong)" stroke-width="1.2" fill="var(--surface)">
+              <rect x="4" y="44" width="130" height="60" rx="10"/>
+              <rect x="168" y="44" width="130" height="60" rx="10"/>
+              <rect x="332" y="44" width="160" height="60" rx="10" style="stroke: var(--accent)"/>
+              <rect x="526" y="44" width="140" height="60" rx="10"/>
+              <rect x="700" y="44" width="130" height="60" rx="10"/>
+              <rect x="864" y="44" width="170" height="60" rx="10"/>
+            </g>
+            <g stroke="var(--faint)" stroke-width="1.2" fill="none">
+              <path d="M134 74 H164" marker-end="url(#arrow)"/>
+              <path d="M298 74 H328" marker-end="url(#arrow)"/>
+              <path d="M492 74 H522" marker-end="url(#arrow)"/>
+              <path d="M666 74 H696" marker-end="url(#arrow)"/>
+              <path d="M830 74 H860" marker-end="url(#arrow)"/>
+            </g>
+            <g fill="var(--text)" font-weight="600" text-anchor="middle">
+              <text x="69" y="70">import</text>
+              <text x="233" y="70">LLM drafts</text>
+              <text x="412" y="70">annotators</text>
+              <text x="596" y="70">review</text>
+              <text x="765" y="70">final</text>
+              <text x="949" y="70">student · export</text>
+            </g>
+            <g fill="var(--dim)" font-size="12" text-anchor="middle" font-family="JetBrains Mono, monospace">
+              <text x="69" y="90">source: import</text>
+              <text x="233" y="90">source: llm</text>
+              <text x="412" y="90">source: human</text>
+              <text x="596" y="90">disagreement first</text>
+              <text x="765" y="90">final_source</text>
+              <text x="949" y="90">picks a source</text>
+            </g>
+            <g fill="var(--faint)" font-size="12" text-anchor="middle">
+              <text x="412" y="26">draft shown, or hidden by the blind audit</text>
+              <text x="765" y="26">consensus · review · import</text>
+              <text x="949" y="124">tested on human labels</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div class="grid g4" style="margin-top: 30px">
+        <div class="src"><code>human</code><p>An answer a person submitted, one per person per item, with whether the draft was shown.</p></div>
+        <div class="src"><code>llm</code><p>The model’s draft, one per item, with its raw output. A failed call is an <code>error</code> row, never a label.</p></div>
+        <div class="src"><code>import</code><p>A label that came in with the data, one per item. Never counted as a person’s work.</p></div>
+        <div class="src"><code>final</code><p>The decided label, kept apart again, with how it was decided: consensus, review or import.</p></div>
+      </div>
+      <p class="rule-line">
+        <strong>The blind audit.</strong> A fixed share of claims hides the draft, chosen by a hash of project, item and
+        user so it is stable. Agreement with the draft is then reported separately for shown and hidden claims. If
+        annotators agree with the model far more often when they can see it, the review loop is measuring
+        <strong>deference, not correctness</strong>.
+      </p>
+    </section>
+
+    <section id="claims">
+      <div class="kicker"><b>04</b><span>Claims</span></div>
+      <h2>Two people never get the same item by accident.</h2>
+      <div class="grid g2" style="margin-top: 8px">
+        <pre class="term"><span class="k">WITH</span> candidate <span class="k">AS</span> (
+  <span class="k">SELECT</span> i.id <span class="k">FROM</span> items i
+  <span class="k">WHERE</span> <span class="p">&lt;eligible for this user&gt;</span>
+  <span class="k">ORDER BY</span> i.seq <span class="k">LIMIT</span> 1
+  <span class="y">FOR UPDATE OF i SKIP LOCKED</span>
+)
+<span class="k">INSERT INTO</span> annotations (…, status, lease_expires_at)
+<span class="k">SELECT</span> …, 'claimed', now() + lease <span class="k">FROM</span> candidate
+<span class="k">ON CONFLICT</span> (item_id, user_id)
+  <span class="k">WHERE</span> source = 'human' <span class="k">DO NOTHING</span>
+<span class="k">RETURNING</span> id, item_id;</pre>
+        <div class="prose">
+          <p>A fresh item is claimed in one statement. <code>SKIP LOCKED</code> is what makes concurrent requests pick
+            different items on real Postgres; a per-user advisory lock stops two browser tabs opening two claims.</p>
+          <p><strong>Leases expire on their own.</strong> There is no sweeper: the eligibility query ignores claims whose
+            lease is in the past. Redundancy N gives every item to N different people, and never to an N+1th.</p>
+          <p><strong>A submit is one transaction</strong> that updates the answer, its item’s count and, when the project
+            allows it, everyone agreed and nobody flagged it, the final label. It returns the next claim with it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="inside">
+      <div class="kicker"><b>05</b><span>What’s inside</span></div>
+      <h2>The rest of the workflow.</h2>
+      <div class="grid g3" style="margin-top: 8px">
+        <div class="card"><span class="tag">annotate</span><h3>Keyboard first</h3><p>Classification and span-level NER. Number keys for labels, <code>S</code> to skip, <code>F</code> to flag. Answers can change until the item is final.</p></div>
+        <div class="card"><span class="tag">review</span><h3>Disagreement first</h3><p>Finalise with any label, accept the majority, finalise every unanimous item at once, or return one answer to its author with a note; it comes back to them first.</p></div>
+        <div class="card"><span class="tag">agreement</span><h3>Measured, per source</h3><p>Krippendorff’s α and pairwise Cohen’s κ for classification, pairwise span F1 for NER, each annotator against the final labels and against the drafts.</p></div>
+        <div class="card"><span class="tag">llm</span><h3>Drafting</h3><p>Ollama with grammar-constrained JSON, Claude through the official SDK, or any OpenAI-compatible server. A prompt preview runs a few items and saves nothing; an error that would repeat stops the job at the first one.</p></div>
+        <div class="card"><span class="tag">train</span><h3>A student model</h3><p>TF-IDF and logistic regression, or an averaged perceptron with constrained Viterbi for NER. The test set is drawn first, so a draft never trains a model scored on the same item.</p></div>
+        <div class="card"><span class="tag">data</span><h3>In and out</h3><p>Import CSV, TSV, JSON or JSONL with de-duplication. Every record of an item is one click away, raw model output included. Export JSONL, CSV or CoNLL.</p></div>
+      </div>
+    </section>
+
+    <section id="gallery">
+      <div class="kicker"><b>06</b><span>Gallery</span></div>
+      <h2>A seeded demo instance, in both themes and both languages.</h2>
+      <div class="grid g2" style="margin-top: 8px">
+        <figure class="shot">
+          <div class="frame"><img src="screenshots/review.png" width="2880" height="1800" alt="Review queue with a tie between two annotators." loading="lazy"></div>
+          <figcaption><b>Review.</b> Disagreements first. This item is a tie between two annotators, and the reviewer decides.</figcaption>
+        </figure>
+        <figure class="shot">
+          <div class="frame"><img src="screenshots/annotate-ner.png" width="2880" height="1800" alt="NER annotation with the model's suggested entities." loading="lazy"></div>
+          <figcaption><b>NER.</b> The draft’s entities sit dashed on the text as suggestions: <code>A</code> accepts them all, or select text and press a label key.</figcaption>
+        </figure>
+        <figure class="shot">
+          <div class="frame"><img src="screenshots/data.png" width="2880" height="1800" alt="Item detail: the draft, its raw output, and each answer." loading="lazy"></div>
+          <figcaption><b>Everything recorded for an item.</b> The final label and who decided it, the draft with the model’s raw output and latency, then each person’s answer.</figcaption>
+        </figure>
+        <figure class="shot">
+          <div class="frame"><img src="screenshots/overview.png" width="2880" height="2988" alt="Project overview: progress, label distribution, agreement, draft quality." loading="lazy"></div>
+          <figcaption><b>Overview.</b> Progress, agreement as α and pairwise κ, each annotator against the final labels and the drafts, and the anchoring check: draft shown against draft hidden.</figcaption>
+        </figure>
+        <figure class="shot">
+          <div class="frame"><img src="screenshots/prelabel.png" width="2880" height="3366" alt="Pre-labelling: prompt preview and draft quality." loading="lazy"></div>
+          <figcaption><b>Pre-labelling.</b> Try the prompt on a few items, with the full exchange shown, before drafting the project.</figcaption>
+        </figure>
+        <figure class="shot">
+          <div class="frame"><img src="screenshots/models.png" width="2880" height="3376" alt="Student model trained on LLM drafts, against baselines." loading="lazy"></div>
+          <figcaption><b>Student models.</b> One trained on the drafts alone, scored on human labels, beside a trivial baseline and the drafts’ own score.</figcaption>
+        </figure>
+        <figure class="shot">
+          <div class="frame"><img class="only-light" src="screenshots/overview-dark-zh.png" width="2880" height="1800" alt="The overview in Chinese, dark theme." loading="lazy"><img class="only-dark" src="screenshots/annotate.png" width="2880" height="1800" alt="Annotating a headline, light theme." loading="lazy"></div>
+          <figcaption><b>The other theme.</b> <span class="only-light">Dark, with the interface in Chinese.</span><span class="only-dark">Light, annotating a headline in English.</span> Both themes and both languages are complete.</figcaption>
+        </figure>
+        <figure class="shot">
+          <div class="frame"><img src="screenshots/login.png" width="2880" height="1800" alt="Sign-in page of a demo instance." loading="lazy"></div>
+          <figcaption><b>A demo instance.</b> With <code>DEMO_MODE</code> on, the sign-in page lists the seeded accounts. Meant for public demos only.</figcaption>
+        </figure>
+      </div>
+      <p class="fineprint">
+        Template-generated sentences, simulated annotators, each with a fixed accuracy and copying the draft some of
+        the time when it is shown, and drafts from a real local model, <code>qwen3:4b</code>. The numbers in these
+        pictures describe that simulation and nothing else; templated text is easy, which is why a student can
+        score 100%. <code>npm run screenshots</code> retakes them from a running demo instance.
+      </p>
+    </section>
+
+    <section id="status">
+      <div class="kicker"><b>07</b><span>Status</span></div>
+      <h2>What was tested here, and what wasn’t.</h2>
+      <div class="grid g2" style="margin-top: 8px">
+        <div>
+          <h3 class="col">Tested</h3>
+          <ul class="checks yes">
+            <li><b>107 tests</b>, server ones against a fresh in-memory Postgres per file: two annotators asking at once never get the same item; a failed model call is never a label; no test item ever contributes a training label.</li>
+            <li><b>The v1 migration</b> on the real v1 database: 94,469 items and 135,835 annotations in 44 s, every annotation accounted for.</li>
+            <li><b>Its largest project</b>, 47,345 items: the item list, search, statistics, and a streaming JSONL export of 47,247 rows, 6.6 MB, in under 0.6 s.</li>
+            <li><b>A demo instance</b> seeded end to end with <code>qwen3:4b</code>, and the UI in Edge, in both languages and both themes.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="col">Not tested</h3>
+          <ul class="checks no">
+            <li><b>The Claude provider</b> has never been called. It is written against the official SDK; the tests use a mock.</li>
+            <li><b>The OpenAI-compatible provider</b> has not been run against a real server.</li>
+            <li><b>A real Postgres server.</b> The suite has only run on the embedded one, which serialises everything on one connection, so it cannot show <code>SKIP LOCKED</code> under true parallel load.</li>
+            <li><b>Load and deployment.</b> No load test, no container image; jobs run in-process, so it is a single-node application by design.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="kicker"><b>08</b><span>Quick start</span></div>
+      <h2>Node, and nothing else.</h2>
+      <div class="grid g2" style="margin-top: 8px">
+        <pre class="term"><span class="p">$</span> npm install
+<span class="p">$</span> npm run dev           <span class="p"># API :4000, web :5173</span>
+
+<span class="p"># a demo instance in an empty data directory</span>
+<span class="p">$</span> DATA_DIR=./data/demo npm run seed:demo
+
+<span class="p"># one process serving both</span>
+<span class="p">$</span> npm run build &amp;&amp; npm start   <span class="p"># :4000</span>
+
+<span class="p">$</span> npm test              <span class="p"># 107 tests</span></pre>
+        <div class="prose">
+          <p><strong>Requirements.</strong> Node 22.12 or later. The database is an embedded Postgres (PGlite) in <code>./data</code>; set <code>DATABASE_URL</code> to use a server instead.</p>
+          <p><strong>First run.</strong> On an empty database the first page asks for an admin account, and disappears once one exists.</p>
+          <p><strong>Drafting.</strong> <code>OLLAMA_MODEL</code> for a local model, <code>ANTHROPIC_API_KEY</code> for Claude, or <code>OPENAI_BASE_URL</code> for any compatible server. The demo seed falls back to a mock model.</p>
+          <p><strong>From v1.</strong> <code>npm run migrate:v1</code> reads v1’s MongoDB without writing to it.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="row">
+      <span>Crowd Annotation · <a href="https://github.com/liu-x27/crowd-annotation-platform/blob/main/LICENSE">MIT</a> · by <a href="https://github.com/liu-x27">liu-x27</a></span>
+      <span>
+        <a href="https://github.com/liu-x27/crowd-annotation-platform">Source</a> ·
+        <a href="https://github.com/liu-x27/crowd-annotation-platform#readme">README</a> ·
+        <a href="https://github.com/liu-x27/crowd-annotation-platform/blob/main/docs/ARCHITECTURE.md">Architecture</a> ·
+        <a href="https://github.com/liu-x27/crowd-annotation-platform/blob/main/docs/MIGRATING_FROM_V1.md">Migrating from v1</a>
+      </span>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

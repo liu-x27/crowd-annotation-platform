@@ -1,4 +1,34 @@
-# crowd-annotation-platform
+<div align="center">
+
+<a href="https://liu-x27.github.io/crowd-annotation-platform/">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lockup-dark.svg">
+  <img alt="Crowd Annotation" src="docs/brand/lockup-light.svg" width="420">
+</picture>
+</a>
+
+### Label with a model. Keep what it said separate.
+
+Assign, annotate, review and export text datasets, with model drafts stored apart from
+human labels, and every number reported against the source it came from.
+
+[![CI](https://github.com/liu-x27/crowd-annotation-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/liu-x27/crowd-annotation-platform/actions/workflows/ci.yml)
+![TypeScript](https://img.shields.io/badge/TypeScript-monorepo-17171a?style=flat-square&logo=typescript&logoColor=white)
+![Postgres](https://img.shields.io/badge/Postgres-embedded_PGlite_or_a_server-17171a?style=flat-square&logo=postgresql&logoColor=white)
+![React 19](https://img.shields.io/badge/React_19-Tailwind_4-17171a?style=flat-square&logo=react&logoColor=white)
+![LLM drafts](https://img.shields.io/badge/drafts-Ollama_·_Claude_·_OpenAI--compatible-fcd34d?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-107-17171a?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/license-MIT-17171a?style=flat-square)](LICENSE)
+
+**[Project page](https://liu-x27.github.io/crowd-annotation-platform/)** · [Why a rewrite](#why-a-rewrite) · [What it does](#what-it-does) · [Running it](#running-it) · [Status](#status) · [Architecture](docs/ARCHITECTURE.md)
+
+</div>
+
+<br>
+
+| **91** | **2,274** | **99** | **135,835** |
+|:---:|:---:|:---:|:---:|
+| of the 3,063 labels v1's README called reviewed one at a time were made at a human pace | v1 drafts carrying a confidence of 0.9 that no model had reported | items whose duplicate drafts disagreed, so "the model's label" depended on row order | v1 annotations migrated through v2's checks in 44 s, every one accounted for |
 
 A labelling tool for the workflow where a language model drafts labels and people check
 them. Annotators are served one item at a time, a reviewer settles disagreements, and the
@@ -208,3 +238,7 @@ Not tested:
   one machine.
 - **Accessibility** beyond keyboard use and screen-reader tables behind the charts has not
   been audited.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
