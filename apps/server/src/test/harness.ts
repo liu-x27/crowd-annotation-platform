@@ -1,7 +1,47 @@
+import { randomBytes } from 'node:crypto';
 import type { CreateProjectInput, LabelDefInput, Me, ProjectDTO, Role } from '@crowd/shared';
 import { labelsFromNames } from '@crowd/shared';
-import { createApp, createContext, type Deps } from '../app';
+import { inject } from 'vitest';
+import { type Context, createApp, createContext, type Deps } from '../app';
 import { type Config, testConfig } from '../config';
+import { adminQuery, withDatabase } from './pg-admin';
+
+/**
+ * A database of its own for one test context. Without TEST_DATABASE_URL that is a fresh
+ * in-memory PGlite (`url` null). With it, a copy of the template global-setup.ts migrated
+ * on that server: copying takes milliseconds where migrating takes seconds, and the files
+ * vitest runs in parallel never see each other's rows.
+ */
+export async function testDatabase(): Promise<{ url: string | null; drop(): Promise<void> }> {
+  const server = process.env.TEST_DATABASE_URL;
+  if (!server) return { url: null, drop: async () => {} };
+  const template = inject('pgTemplate');
+  const name = `${template}_${randomBytes(4).toString('hex')}`;
+  await adminQuery(server, `create database "${name}" template "${template}"`);
+  return {
+    url: withDatabase(server, name),
+    drop: async () => {
+      await adminQuery(server, `drop database if exists "${name}" with (force)`);
+    },
+  };
+}
+
+/** `createContext` on the test configuration and a database of its own, dropped on close. */
+export async function testContext(
+  overrides: Partial<Config> = {},
+  opts?: Parameters<typeof createContext>[1],
+): Promise<Context & { databaseUrl: string | null }> {
+  const database = await testDatabase();
+  const ctx = await createContext(testConfig({ databaseUrl: database.url, ...overrides }), opts);
+  return {
+    deps: ctx.deps,
+    databaseUrl: database.url,
+    async close() {
+      await ctx.close();
+      await database.drop();
+    },
+  };
+}
 
 export interface Response<T = any> {
   status: number;
@@ -66,6 +106,8 @@ export class Client {
 
 export interface Harness {
   deps: Deps;
+  /** The Postgres server database behind `deps.db`; null on PGlite. */
+  databaseUrl: string | null;
   app: ReturnType<typeof createApp>;
   admin: Client;
   anon(): Client;
@@ -83,10 +125,7 @@ export type ProjectInput = Omit<Partial<CreateProjectInput>, 'labels' | 'setting
 };
 
 export async function harness(overrides: Partial<Config> = {}): Promise<Harness> {
-  const ctx = await createContext(testConfig(overrides), {
-    inProcessTraining: true,
-    llmConcurrency: 2,
-  });
+  const ctx = await testContext(overrides, { inProcessTraining: true, llmConcurrency: 2 });
   await ctx.deps.jobs.start();
   const app = createApp(ctx.deps);
   const admin = new Client(app);
@@ -95,6 +134,7 @@ export async function harness(overrides: Partial<Config> = {}): Promise<Harness>
 
   return {
     deps: ctx.deps,
+    databaseUrl: ctx.databaseUrl,
     app,
     admin,
     anon: () => new Client(app),

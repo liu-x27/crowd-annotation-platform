@@ -1,15 +1,13 @@
 import type { JobView, ModelSummary, Prediction, TrainJobParams } from '@crowd/shared';
 import { labelsFromNames } from '@crowd/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createContext } from '../app';
-import { testConfig } from '../config';
 import { getProject } from '../modules/projects/service';
 import { runTraining } from '../modules/training/core';
 import type { TrainingInput } from '../modules/training/data';
 import { buildTrainingInput } from '../modules/training/data';
 import { decodeModel } from '../modules/training/model-file';
 import { spansToTags, tagsToSpans } from '../modules/training/perceptron';
-import { type Harness, harness } from './harness';
+import { type Harness, harness, testContext } from './harness';
 
 const params = (over: Partial<TrainJobParams> = {}): TrainJobParams => ({
   source: 'final',
@@ -217,7 +215,7 @@ describe('training through the API', () => {
 
 describe('worker thread', () => {
   it('runs training off the main thread', async () => {
-    const ctx = await createContext(testConfig(), { inProcessTraining: false });
+    const ctx = await testContext({}, { inProcessTraining: false });
     const { createApp } = await import('../app');
     const { Client, PASSWORD } = await import('./harness');
     try {

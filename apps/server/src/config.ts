@@ -113,12 +113,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-/** A config for tests: in-memory database, no .env, nothing external. */
+/**
+ * A config for tests: in-memory database, no .env, nothing external. To run on a Postgres
+ * server instead (TEST_DATABASE_URL), tests take a database of their own from
+ * `testContext` in test/harness.ts, which passes it in as `databaseUrl`.
+ */
 export function testConfig(overrides: Partial<Config> = {}): Config {
   return {
     ...loadConfig({ NODE_ENV: 'test' }),
     dataDir: ':memory:',
-    databaseUrl: process.env.TEST_DATABASE_URL ?? null,
+    databaseUrl: null,
     ...overrides,
   };
 }

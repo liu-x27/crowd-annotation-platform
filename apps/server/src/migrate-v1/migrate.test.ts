@@ -1,10 +1,9 @@
 import bcrypt from 'bcryptjs';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type Context, createApp, createContext } from '../app';
-import { testConfig } from '../config';
+import { type Context, createApp } from '../app';
 import { annotations, assignments, items, projects } from '../db/schema';
-import { Client } from '../test/harness';
+import { Client, testContext } from '../test/harness';
 import { convertSpans, type MigrationReport, migrateV1, toRanges, type V1Data } from './migrate';
 
 const at = (iso: string) => new Date(iso);
@@ -174,7 +173,7 @@ async function fixture(): Promise<V1Data> {
 let ctx: Context;
 let report: MigrationReport;
 beforeAll(async () => {
-  ctx = await createContext(testConfig(), { inProcessTraining: true });
+  ctx = await testContext({}, { inProcessTraining: true });
   report = await migrateV1(ctx.deps.db, await fixture(), {
     burstThreshold: 100,
     finalizeImported: true,

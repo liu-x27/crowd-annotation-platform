@@ -10,6 +10,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Lint, typecheck, test, build (Node ${{ matrix.node }})
@@ -31,3 +34,30 @@ jobs:
       # Tests run on the embedded Postgres (PGlite); no database service is needed.
       - run: npm test
       - run: npm run build
+
+  postgres:
+    name: Server tests on Postgres 18
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The whole server suite, each test file on its own copy of a migrated template
+      # database, plus postgres.test.ts, which only runs here: concurrent claims and the
+      # row locks bulk review takes, on connections that really run in parallel.
+      - run: npm test -w @crowd/server
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
