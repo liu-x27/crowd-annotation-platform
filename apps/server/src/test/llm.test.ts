@@ -1,8 +1,8 @@
-import type { JobView, PreviewRow } from '@crowd/shared';
-import { labelsFromNames } from '@crowd/shared';
+import type { ClaimView, JobView, PreviewRow, QueueView, SubmitResult } from '@crowd/shared';
+import { labelsFromNames, withText } from '@crowd/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { annotations } from '../db/schema';
+import { annotations, items } from '../db/schema';
 import { extractJson, parseClassification, parseNer } from '../modules/llm/parse';
 import { type Harness, harness } from './harness';
 
@@ -168,6 +168,96 @@ describe('pre-labelling jobs', () => {
     const first = await h.admin.get(`/api/projects/${p.id}/items/${detail.body.rows[0].id}`);
     const draft = first.body.annotations.find((a: { source: string }) => a.source === 'llm');
     expect(draft.spans.map((s: { text: string }) => s.text)).toEqual(['张伟', '李娜', '北京']);
+  });
+});
+
+describe('the draft on a claim', () => {
+  type Client = Awaited<ReturnType<Harness['user']>>;
+
+  /**
+   * Work through the queue as `who`, and check each claim against the database as it is
+   * served: the stored claim, its item, and the draft shown if the claim records it shown.
+   */
+  async function walk(projectId: number, type: 'classification' | 'ner', who: Client) {
+    const seen: { shown: boolean | null; draft: ClaimView['draft'] }[] = [];
+    let claim = (await who.get<QueueView>(`/api/projects/${projectId}/queue`)).body.claim;
+    while (claim) {
+      const [ann] = await h.deps.db
+        .select()
+        .from(annotations)
+        .where(eq(annotations.id, claim.annotationId));
+      const [item] = await h.deps.db.select().from(items).where(eq(items.id, ann!.itemId));
+      const [draft] = await h.deps.db
+        .select()
+        .from(annotations)
+        .where(and(eq(annotations.itemId, item!.id), eq(annotations.source, 'llm')));
+      expect(claim).toEqual({
+        annotationId: ann!.id,
+        item: { id: item!.id, seq: item!.seq, text: item!.text, meta: item!.meta },
+        draft: ann!.draftShown
+          ? {
+              label: draft!.label,
+              spans: type === 'ner' ? withText(item!.text, draft!.spans ?? []) : null,
+              model: draft!.model,
+            }
+          : null,
+        current: null,
+        returned: null,
+        leaseExpiresAt: ann!.leaseExpiresAt!.toISOString(),
+      });
+      expect(ann).toMatchObject({ status: 'claimed', userId: who.me.id });
+      // A draft-shown decision is recorded only where there is a draft to show or hide.
+      expect(ann!.draftShown === null).toBe(draft === undefined);
+      seen.push({ shown: ann!.draftShown, draft: claim.draft });
+      const res = await who.post<SubmitResult>(
+        `/api/projects/${projectId}/annotations/${claim.annotationId}/submit`,
+        type === 'ner' ? { spans: [] } : { label: 'pos' },
+      );
+      expect(res.status).toBe(200);
+      claim = res.body.next.claim;
+    }
+    return seen;
+  }
+
+  it('shows the draft, or hides it for a blind-audit pair, as the claim records', async () => {
+    const texts = Array.from({ length: 16 }, (_, i) => `pos or neg, item ${i}`);
+    const p = await h.project(
+      { name: 'claim-drafts', settings: { blindRate: 0.5, llm: { provider: 'mock' } } },
+      texts,
+    );
+    await runJob(p.id, { scope: 'all' });
+    const seen = await walk(p.id, 'classification', await h.user('claim-drafts-a'));
+    expect(seen).toHaveLength(16);
+    expect(seen.filter((s) => s.shown === true).length).toBeGreaterThan(0);
+    expect(seen.filter((s) => s.shown === false).length).toBeGreaterThan(0);
+  });
+
+  it('serves NER drafts with their text, and nothing where there is no draft', async () => {
+    const p = await h.project(
+      {
+        name: 'claim-ner-drafts',
+        type: 'ner',
+        labels: labelsFromNames(['PER', 'LOC']),
+        settings: { llm: { provider: 'mock' } },
+      },
+      ['张伟和李娜在北京见面', '没有实体的句子', '李娜去了上海'],
+    );
+    await runJob(p.id, { scope: 'all' });
+    // One more item, imported after the drafts: it has none.
+    await h.admin.post(`/api/projects/${p.id}/items/batch`, { items: [{ text: '张伟在家' }] });
+    const seen = await walk(p.id, 'ner', await h.user('claim-ner-a'));
+    expect(seen.map((s) => s.shown)).toEqual([true, true, true, null]);
+    expect(seen[0]!.draft!.spans!.map((s) => s.text)).toEqual(['张伟', '李娜', '北京']);
+  });
+
+  it('records the draft hidden when the project hides drafts', async () => {
+    const p = await h.project(
+      { name: 'claim-hidden', settings: { draftMode: 'hidden', llm: { provider: 'mock' } } },
+      ['pos one', 'neg two'],
+    );
+    await runJob(p.id, { scope: 'all' });
+    const seen = await walk(p.id, 'classification', await h.user('claim-hidden-a'));
+    expect(seen.map((s) => s.shown)).toEqual([false, false]);
   });
 });
 
