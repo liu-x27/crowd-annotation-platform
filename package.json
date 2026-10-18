@@ -23,6 +23,7 @@
     "seed:demo": "npm run seed:demo -w @crowd/server --",
     "migrate:v1": "npm run migrate:v1 -w @crowd/server --",
     "create-admin": "npm run create-admin -w @crowd/server --",
+    "llm:check": "npm run llm:check -w @crowd/server --",
     "db:generate": "npm run db:generate -w @crowd/server",
     "screenshots": "npm run screenshots -w @crowd/web",
     "a11y": "npm run a11y -w @crowd/web --"

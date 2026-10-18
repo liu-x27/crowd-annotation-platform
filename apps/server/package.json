@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "seed:demo": "tsx src/scripts/seed-demo.ts",
     "migrate:v1": "tsx src/scripts/migrate-v1.ts",
-    "create-admin": "tsx src/scripts/create-admin.ts"
+    "create-admin": "tsx src/scripts/create-admin.ts",
+    "llm:check": "tsx src/scripts/llm-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
