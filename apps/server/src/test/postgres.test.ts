@@ -99,6 +99,19 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
     return row!.n;
   }
 
+  /** A claim on `itemId`, in a transaction left open: it holds the item until it commits. */
+  async function pendingClaim(projectId: number, itemId: number, userId: number) {
+    const c = await connect();
+    await c.query('begin');
+    await c.query('select id from items where id = $1 for update', [itemId]);
+    await c.query(
+      `insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
+       values ($1, $2, 'human', $3, 'claimed', now() + interval '30 minutes')`,
+      [projectId, itemId, userId],
+    );
+    return c;
+  }
+
   describe('claims', () => {
     it.each([1, 2])(
       'with redundancy %i, gives each item to exactly that many people when twelve claim and submit at once',
@@ -173,19 +186,6 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
       return { projectId: p.id, x: x!.id, first, second };
     }
 
-    /** A claim on `itemId`, in a transaction left open: it holds the item until it commits. */
-    async function pendingClaim(projectId: number, itemId: number, userId: number) {
-      const c = await connect();
-      await c.query('begin');
-      await c.query('select id from items where id = $1 for update', [itemId]);
-      await c.query(
-        `insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
-         values ($1, $2, 'human', $3, 'claimed', now() + interval '30 minutes')`,
-        [projectId, itemId, userId],
-      );
-      return c;
-    }
-
     /**
      * Start `claim`, and commit `pending` while the claim's scan is under way. A statement
      * shows as active from the moment it is parsed, before it takes its snapshot, so the
@@ -253,6 +253,90 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
       expect({ served: result.claim!.item.seq, holders: await holding(x) }).toEqual({
         served: AHEAD + 2,
         holders: 1,
+      });
+    });
+  });
+
+  /**
+   * A claim whose lease has run out is renewed when its owner comes back, unless the item
+   * has meanwhile gone to as many other people as its redundancy asks for, or been finalised.
+   * Either can be under way, not yet committed, when the owner asks: a fresh claim holds the
+   * item while it inserts, and so does a reviewer finalising it, who also drops the claims
+   * left open on it. Raw connections hold those transactions open here.
+   */
+  describe('an expired claim whose owner comes back while the item is being taken', () => {
+    /** A one-item project with redundancy 1, claimed by `owner`, whose lease has run out. */
+    async function lapsed(name: string) {
+      const p = await h.project({ name, settings: { redundancy: 1 } }, [`${name} item`]);
+      const [owner, other] = await Promise.all([h.user(`${name}-owner`), h.user(`${name}-other`)]);
+      const { claim } = await queue(owner, p.id);
+      await h.deps.db.execute(
+        sql`update annotations set lease_expires_at = now() - interval '1 minute'
+            where id = ${claim!.annotationId}`,
+      );
+      return { projectId: p.id, x: claim!.item.id, owner, other };
+    }
+
+    /**
+     * Whether `request` waits on a lock before it finishes. It is left running either way:
+     * the caller commits whatever it may be waiting for, then awaits it.
+     */
+    async function waitsOnLock(request: Promise<unknown>): Promise<boolean> {
+      let done = false;
+      const settle = () => {
+        done = true;
+      };
+      request.then(settle, settle);
+      const deadline = Date.now() + 15_000;
+      while (!done) {
+        if (await running('%', { waiting: true })) return true;
+        if (Date.now() > deadline) throw new Error('the request neither finished nor waited');
+      }
+      return false;
+    }
+
+    it('is not renewed beside a fresh claim on the item that has not committed yet', async ({
+      annotate,
+    }) => {
+      const { projectId, x, owner, other } = await lapsed('lapsed-claimed');
+      const pending = await pendingClaim(projectId, x, other.me.id);
+      const asking = queue(owner, projectId);
+      const waited = await waitsOnLock(asking);
+      await pending.query('commit');
+      const view = await asking;
+      await annotate(`The owner waited for the fresh claim to commit: ${waited}`, 'notice');
+      expect({ served: view.claim?.item.id ?? null, holders: await holding(x) }).toEqual({
+        served: null,
+        holders: 1,
+      });
+    });
+
+    it('is let go, not answered with a 500, when a reviewer finalising the item drops it', async ({
+      annotate,
+    }) => {
+      const { projectId, x, owner } = await lapsed('lapsed-final');
+      // What finalizeOpenItem does, in a transaction left open.
+      const reviewer = await connect();
+      await reviewer.query('begin');
+      await reviewer.query('select id from items where id = $1 for update', [x]);
+      await reviewer.query(
+        `update items set final_label = 'pos', final_source = 'review', finalized_at = now()
+         where id = $1`,
+        [x],
+      );
+      await reviewer.query(
+        `delete from annotations
+         where item_id = $1 and source = 'human' and status = 'claimed' and submitted_at is null`,
+        [x],
+      );
+      const asking = owner.get<QueueView>(`/api/projects/${projectId}/queue`);
+      const waited = await waitsOnLock(asking);
+      await reviewer.query('commit');
+      const res = await asking;
+      await annotate(`The owner waited for the reviewer to commit: ${waited}`, 'notice');
+      expect({ status: res.status, served: res.body.claim?.item.id ?? null }).toEqual({
+        status: 200,
+        served: null,
       });
     });
   });
