@@ -1,0 +1,18 @@
+# The build needs the sources and the lockfile; nothing built, installed or local.
+# Patterns without ** match at the context root only, so apps/web/src/features/data stays.
+**/node_modules
+**/dist
+data
+data-*
+.env
+.env.*
+!.env.example
+.git
+.github
+docs
+load
+coverage
+**/*.log
+**/*.tsbuildinfo
+test-results
+playwright-report

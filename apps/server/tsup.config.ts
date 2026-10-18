@@ -5,6 +5,11 @@ export default defineConfig({
     index: 'src/index.ts',
     // The training worker is loaded by path at runtime, so it is its own bundle.
     'train-worker': 'src/modules/training/worker.ts',
+    // Scripts the container image runs without tsx: building and restoring the demo
+    // database, and recovering an admin account.
+    'seed-demo': 'src/scripts/seed-demo.ts',
+    'demo-restore': 'src/scripts/demo-restore.ts',
+    'create-admin': 'src/scripts/create-admin.ts',
   },
   format: ['esm'],
   platform: 'node',
