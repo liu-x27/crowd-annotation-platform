@@ -116,12 +116,20 @@ export const items = pgTable(
     finalSource: text().$type<FinalSource>(),
     finalizedBy: integer().references(() => users.id, { onDelete: 'set null' }),
     finalizedAt: timestamp(tz),
+    /**
+     * In the project's calibration set: served before other items, never with the draft on
+     * screen, and to at least CALIBRATION_ANSWERS people. Drawn once, by hash.
+     */
+    calibration: boolean().notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex('items_project_seq_idx').on(t.projectId, t.seq),
     index('items_project_hash_idx').on(t.projectId, t.textHash),
     index('items_open_idx').on(t.projectId, t.seq).where(sql`${t.finalizedAt} is null`),
+    index('items_calibration_open_idx')
+      .on(t.projectId, t.seq)
+      .where(sql`${t.calibration} and ${t.finalizedAt} is null`),
   ],
 );
 

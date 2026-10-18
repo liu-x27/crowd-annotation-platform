@@ -5,13 +5,14 @@ import {
   type HistoryEntry,
   type ProjectType,
   type QueueView,
+  requiredAnswers,
   type Span,
   type SubmitAnnotationInput,
   unitHash,
   validateSpans,
   withText,
 } from '@crowd/shared';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, type SQL, sql } from 'drizzle-orm';
 import { type Db, type DbOrTx, one, rows } from '../../db/client';
 import {
   type AnnotationRow,
@@ -25,20 +26,22 @@ import {
 import { finalizeOpenItem } from '../../lib/answers';
 import { iso, spansView, userRef } from '../../lib/dto';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../lib/errors';
+import { requiredSql } from '../../lib/required';
 
 /**
  * Items user `u` may be served in `project`, as a WHERE clause over `items i`.
  *
- * - not finalised, and fewer than `redundancy` annotators have submitted or hold a live claim
+ * - not finalised, and fewer annotators than it needs (`redundancy`, or for a calibration
+ *   item at least CALIBRATION_ANSWERS) have submitted or hold a live claim
  * - not already annotated, claimed or skipped by this user
  * - inside this user's assignment ranges if they have any; otherwise outside everyone's
  */
 function eligible(project: ProjectRow, userId: number) {
-  const k = project.settings.redundancy;
+  const required = requiredSql('i', project.settings.redundancy);
   return sql`
     i.project_id = ${project.id}
     and i.finalized_at is null
-    and i.human_count < ${k}
+    and i.human_count < ${required}
     and (case
       when exists (select 1 from assignments r where r.project_id = ${project.id} and r.user_id = ${userId})
         then exists (select 1 from assignments r where r.project_id = ${project.id} and r.user_id = ${userId}
@@ -49,7 +52,7 @@ function eligible(project: ProjectRow, userId: number) {
     and not exists (select 1 from annotations a where a.item_id = i.id and a.source = 'human' and a.user_id = ${userId})
     and (select count(*) from annotations a
          where a.item_id = i.id and a.source = 'human'
-           and (a.status = 'submitted' or (a.status = 'claimed' and a.lease_expires_at > now()))) < ${k}`;
+           and (a.status = 'submitted' or (a.status = 'claimed' and a.lease_expires_at > now()))) < ${required}`;
 }
 
 export async function availableCount(
@@ -76,12 +79,13 @@ async function submittedCount(db: DbOrTx, projectId: number, userId: number): Pr
 /**
  * Whether the draft is on screen for this (item, annotator) pair. Deterministic, so a
  * reload shows the same thing, and recorded on the annotation so agreement with the draft
- * can later be split by it.
+ * can later be split by it. Never on a calibration item: its answers are the blind
+ * reference the drafts are measured against.
  */
-function draftDecision(project: ProjectRow, itemId: number, userId: number): boolean {
+function draftDecision(project: ProjectRow, item: ItemRow, userId: number): boolean {
   const { draftMode, blindRate } = project.settings;
-  if (draftMode === 'hidden') return false;
-  if (blindRate > 0 && unitHash(`blind:${project.id}:${itemId}:${userId}`) < blindRate)
+  if (draftMode === 'hidden' || item.calibration) return false;
+  if (blindRate > 0 && unitHash(`blind:${project.id}:${item.id}:${userId}`) < blindRate)
     return false;
   return true;
 }
@@ -196,7 +200,8 @@ export async function claimNext(
         i.finalizedAt != null ||
         (a.leaseExpiresAt != null &&
           a.leaseExpiresAt.getTime() < Date.now() &&
-          (await othersHolding(tx, i.id, user.id)) >= project.settings.redundancy);
+          (await othersHolding(tx, i.id, user.id)) >=
+            requiredAnswers(project.settings.redundancy, i.calibration));
       if (stale) {
         await releaseRow(tx, a);
         continue;
@@ -236,7 +241,8 @@ export async function claimNext(
       return claimView(tx, project, reopened!, returned.i);
     }
 
-    // 3. A fresh item: lock the first eligible one nobody else holds, then insert the claim
+    // 3. A fresh item, from the calibration set while it lasts so that its reference fills
+    // first: lock the first eligible one nobody else holds, then insert the claim
     // in a second statement that asks again whether it is eligible. The first statement's
     // filter reads a snapshot from when it began, and SKIP LOCKED only passes over items
     // locked when the scan reaches them: a claim on the same item that commits in between is
@@ -253,15 +259,20 @@ export async function claimNext(
             sql`, `,
           )})`
         : sql``;
-      const [candidate] = await rows<{ id: number }>(
-        tx,
-        sql`
-          select i.id from items i
-          where ${eligible(project, user.id)} ${notPassedOver}
-          order by i.seq
-          limit 1
-          for update of i skip locked`,
-      );
+      const first = (only: SQL) =>
+        rows<{ id: number }>(
+          tx,
+          sql`
+            select i.id from items i
+            where ${eligible(project, user.id)} ${only} ${notPassedOver}
+            order by i.seq
+            limit 1
+            for update of i skip locked`,
+        );
+      // Two statements rather than one ordered by the flag, so that each walks an index in
+      // seq order; the first finds nothing at once in a project without a calibration set.
+      const fromSet = await first(sql`and i.calibration`);
+      const [candidate] = fromSet.length ? fromSet : await first(sql``);
       if (!candidate) return null;
       [hit] = await rows<{ id: number; item_id: number }>(
         tx,
@@ -275,13 +286,13 @@ export async function claimNext(
       );
       passedOver.push(candidate.id);
     }
+    const [item] = await tx.select().from(items).where(eq(items.id, hit.item_id));
     const draft = await draftFor(tx, hit.item_id);
     const [ann] = await tx
       .update(annotations)
-      .set({ draftShown: draft ? draftDecision(project, hit.item_id, user.id) : null })
+      .set({ draftShown: draft ? draftDecision(project, item!, user.id) : null })
       .where(eq(annotations.id, hit.id))
       .returning();
-    const [item] = await tx.select().from(items).where(eq(items.id, hit.item_id));
     return claimView(tx, project, ann!, item!);
   });
 }
@@ -342,7 +353,7 @@ export function validateAnswer(
 export async function maybeAutoFinalize(
   tx: DbOrTx,
   project: ProjectRow,
-  itemId: number,
+  item: Pick<ItemRow, 'id' | 'calibration'>,
 ): Promise<boolean> {
   if (project.settings.autoFinalize !== 'unanimous') return false;
   const subs = await tx
@@ -350,15 +361,16 @@ export async function maybeAutoFinalize(
     .from(annotations)
     .where(
       and(
-        eq(annotations.itemId, itemId),
+        eq(annotations.itemId, item.id),
         eq(annotations.source, 'human'),
         eq(annotations.status, 'submitted'),
       ),
     );
-  if (subs.length < project.settings.redundancy || subs.some((s) => s.flagged)) return false;
+  const required = requiredAnswers(project.settings.redundancy, item.calibration);
+  if (subs.length < required || subs.some((s) => s.flagged)) return false;
   const keys = new Set(subs.map((s) => answerKey(project.type, s)));
   if (keys.size !== 1) return false;
-  return finalizeOpenItem(tx, project.type, itemId, subs[0]!, 'consensus', null);
+  return finalizeOpenItem(tx, project.type, item.id, subs[0]!, 'consensus', null);
 }
 
 async function ownAnnotation(tx: DbOrTx, annotationId: number, user: UserRow) {
@@ -419,7 +431,7 @@ export async function submitAnnotation(
       .update(items)
       .set({ humanCount: sql`${items.humanCount} + 1` })
       .where(eq(items.id, i.id));
-    return { finalized: await maybeAutoFinalize(tx, project, i.id) };
+    return { finalized: await maybeAutoFinalize(tx, project, i) };
   });
 }
 
@@ -454,7 +466,7 @@ export async function editAnnotation(
         updatedAt: new Date(),
       })
       .where(eq(annotations.id, a.id));
-    return { finalized: await maybeAutoFinalize(tx, project, i.id) };
+    return { finalized: await maybeAutoFinalize(tx, project, i) };
   });
 }
 

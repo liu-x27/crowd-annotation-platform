@@ -14,6 +14,7 @@ import { type Db, type DbOrTx, rows } from '../../db/client';
 import { assignments, type ProjectRow, projects, type UserRow, users } from '../../db/schema';
 import { projectDto, userRef } from '../../lib/dto';
 import { AppError, badRequest, conflict, notFound } from '../../lib/errors';
+import { requiredSql } from '../../lib/required';
 import { availableCount } from '../annotate/queue';
 
 export async function getProject(db: DbOrTx, id: number): Promise<ProjectRow> {
@@ -26,6 +27,7 @@ export async function getProject(db: DbOrTx, id: number): Promise<ProjectRow> {
 export async function projectCounts(db: Db, ids: number[]): Promise<Map<number, ProjectCounts>> {
   const out = new Map<number, ProjectCounts>();
   if (ids.length === 0) return out;
+  const required = requiredSql('i', sql`(p.settings->>'redundancy')::int`);
   const found = await rows<{
     id: number;
     items: number;
@@ -40,9 +42,9 @@ export async function projectCounts(db: Db, ids: number[]): Promise<Map<number, 
         count(i.id)::int as items,
         count(i.id) filter (where i.finalized_at is null and i.human_count = 0)::int as unlabeled,
         count(i.id) filter (where i.finalized_at is null and i.human_count > 0
-          and i.human_count < (p.settings->>'redundancy')::int)::int as in_progress,
+          and i.human_count < ${required})::int as in_progress,
         count(i.id) filter (where i.finalized_at is null
-          and i.human_count >= (p.settings->>'redundancy')::int)::int as needs_review,
+          and i.human_count >= ${required})::int as needs_review,
         count(i.id) filter (where i.finalized_at is not null)::int as finalized
       from projects p
       left join items i on i.project_id = p.id

@@ -234,6 +234,19 @@ export const bulkFinalizeSchema = z.object({
   itemIds: z.array(z.number().int().positive()).max(20_000).optional(),
 });
 
+export const calibrationDrawSchema = z.object({
+  /** How many items to draw. Only items nobody has answered or claimed are drawn. */
+  size: z.number().int().min(1).max(5000),
+});
+
+export const calibrationReportQuerySchema = z.object({
+  /**
+   * The alternative annotator test's ε, what the model may lose to an annotator and still
+   * replace them: 0.2 for experts, 0.15 for skilled annotators, 0.1 for crowd workers.
+   */
+  epsilon: z.coerce.number().min(0).max(0.5).default(0.15),
+});
+
 export const reviewQueueQuerySchema = z.object({
   filter: z.enum(['all', 'disagreement', 'flagged', 'draft_overridden']).default('all'),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -317,6 +330,7 @@ export type ItemListQuery = z.input<typeof itemListQuerySchema>;
 export type FinalizeInput = z.infer<typeof finalizeSchema>;
 export type BulkFinalizeInput = z.infer<typeof bulkFinalizeSchema>;
 export type ReviewQueueQuery = z.input<typeof reviewQueueQuerySchema>;
+export type CalibrationDrawInput = z.infer<typeof calibrationDrawSchema>;
 export type LlmOverrides = z.infer<typeof llmOverridesSchema>;
 export type PrelabelJobInput = z.input<typeof prelabelJobSchema>;
 export type LlmPreviewInput = z.input<typeof llmPreviewSchema>;

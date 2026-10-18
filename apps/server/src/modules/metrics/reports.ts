@@ -15,7 +15,7 @@ import {
   spanAgreement,
 } from './stats';
 
-async function userRefs(db: Db, ids: number[]): Promise<Map<number, UserRef>> {
+export async function userRefs(db: Db, ids: number[]): Promise<Map<number, UserRef>> {
   const out = new Map<number, UserRef>();
   if (ids.length === 0) return out;
   for (const u of await db.select().from(users).where(inArray(users.id, ids)))

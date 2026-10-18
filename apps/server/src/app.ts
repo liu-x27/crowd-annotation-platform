@@ -12,6 +12,7 @@ import { JobRunner } from './jobs/runner';
 import { AppError, forbidden } from './lib/errors';
 import { authRoutes, meRoutes, userRoutes } from './modules/accounts/routes';
 import { annotateRoutes } from './modules/annotate/routes';
+import { calibrationRoutes } from './modules/calibration/routes';
 import { insightRoutes } from './modules/insights/routes';
 import { itemRoutes } from './modules/items/routes';
 import { createPrelabelHandler } from './modules/llm/prelabel';
@@ -197,6 +198,7 @@ export function createApp(deps: Deps) {
   app.route('/api/projects/:id', annotateRoutes());
   app.route('/api/projects/:id', itemRoutes());
   app.route('/api/projects/:id', insightRoutes());
+  app.route('/api/projects/:id', calibrationRoutes());
   app.route('/api', systemRoutes());
 
   app.use('*', spa(deps.config.webDist));

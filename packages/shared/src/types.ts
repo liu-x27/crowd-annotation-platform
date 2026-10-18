@@ -388,6 +388,71 @@ export interface DraftQuality {
   };
 }
 
+// ── Calibration ─────────────────────────────────────────────────────────────
+
+export interface IntervalView {
+  estimate: number;
+  low: number;
+  high: number;
+}
+
+/**
+ * What a project's calibration set says about its drafts. Every figure is computed from
+ * blind answers only, those given without the draft on screen, and is null until there
+ * is enough of them.
+ */
+export interface CalibrationReport {
+  /** Items in the calibration set; 0 when the project has none. */
+  size: number;
+  /** Items with at least CALIBRATION_ANSWERS blind answers. */
+  complete: number;
+  /**
+   * Complete items whose blind answers have a single most common label, which is the
+   * reference everything below is measured against.
+   */
+  referenced: number;
+  /** Complete items whose most common blind answer is tied, left out. */
+  ties: number;
+  /** The reports need a label per item, so they are for classification projects. */
+  supported: boolean;
+  /** How often the draft matches the reference, with a 95% Wilson interval. */
+  draftAccuracy: { correct: number; n: number; interval: IntervalView } | null;
+  /** The alternative annotator test: may the drafts stand in for these annotators? */
+  altTest: {
+    epsilon: number;
+    q: number;
+    annotators: {
+      user: UserRef;
+      instances: number;
+      modelAdvantage: number;
+      annotatorAdvantage: number;
+      pValue: number | null;
+      modelWins: boolean;
+    }[];
+    skipped: { user: UserRef; instances: number }[];
+    winningRate: number | null;
+    advantageProbability: number | null;
+    passed: boolean;
+  } | null;
+  /**
+   * The share of each label among the project's drafted items, as people would label
+   * them: from the drafts alone, from the calibration set alone, and from both with
+   * prediction-powered inference. Intervals are 95%.
+   */
+  distribution: {
+    /** Calibration items with a reference and a draft. */
+    n: number;
+    /** Other items with a draft. */
+    N: number;
+    labels: {
+      label: string;
+      drafts: number;
+      calibration: IntervalView;
+      ppi: IntervalView & { lambda: number };
+    }[];
+  } | null;
+}
+
 // ── Student model ───────────────────────────────────────────────────────────
 
 export interface EpochStats {

@@ -13,6 +13,7 @@ import {
   itemListQuerySchema,
   type LabelDef,
   normalizeText,
+  requiredAnswers,
   type Span,
   validateSpans,
 } from '@crowd/shared';
@@ -30,6 +31,7 @@ import {
 import { answerSql, finalAnswerSql, finalColumns } from '../../lib/answers';
 import { annotationView, finalView, iso } from '../../lib/dto';
 import { AppError, notFound } from '../../lib/errors';
+import { requiredSql } from '../../lib/required';
 
 export const textHash = (text: string) =>
   createHash('sha1').update(normalizeText(text)).digest('hex');
@@ -231,6 +233,7 @@ export async function listItems(
 ): Promise<ItemPage> {
   const q = itemListQuerySchema.parse(rawQuery);
   const k = project.settings.redundancy;
+  const required = requiredSql('i', k);
   const conds = [sql`i.project_id = ${project.id}`];
 
   switch (q.state) {
@@ -238,10 +241,10 @@ export async function listItems(
       conds.push(sql`i.finalized_at is null and i.human_count = 0`);
       break;
     case 'in_progress':
-      conds.push(sql`i.finalized_at is null and i.human_count > 0 and i.human_count < ${k}`);
+      conds.push(sql`i.finalized_at is null and i.human_count > 0 and i.human_count < ${required}`);
       break;
     case 'needs_review':
-      conds.push(sql`i.finalized_at is null and i.human_count >= ${k}`);
+      conds.push(sql`i.finalized_at is null and i.human_count >= ${required}`);
       break;
     case 'finalized':
       conds.push(sql`i.finalized_at is not null`);
@@ -306,6 +309,7 @@ export async function listItems(
     seq: number;
     text: string;
     human_count: number;
+    calibration: boolean;
     final_label: string | null;
     final_span_count: number | null;
     final_source: FinalSource | null;
@@ -321,7 +325,7 @@ export async function listItems(
   }>(
     db,
     sql`
-      select i.id, i.seq, left(i.text, 400) as text, i.human_count, i.final_label,
+      select i.id, i.seq, left(i.text, 400) as text, i.human_count, i.calibration, i.final_label,
         case when i.final_spans is null then null else jsonb_array_length(i.final_spans) end as final_span_count,
         i.final_source, i.finalized_at is not null as finalized,
         d.label as llm_label,
@@ -349,7 +353,7 @@ export async function listItems(
       ? 'finalized'
       : r.human_count === 0
         ? 'unlabeled'
-        : r.human_count >= k
+        : r.human_count >= requiredAnswers(k, r.calibration)
           ? 'needs_review'
           : 'in_progress';
 

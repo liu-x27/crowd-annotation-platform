@@ -53,6 +53,18 @@ export type AnnotationStatus = (typeof ANNOTATION_STATUSES)[number];
 export const FINAL_SOURCES = ['consensus', 'review', 'import'] as const;
 export type FinalSource = (typeof FINAL_SOURCES)[number];
 
+/**
+ * A calibration item needs at least this many answers, every one given without the draft
+ * on screen, whatever the project's redundancy: the alternative annotator test leaves one
+ * annotator out at a time and compares with the rest.
+ */
+export const CALIBRATION_ANSWERS = 3;
+
+/** How many answers an item needs before it is complete. */
+export function requiredAnswers(redundancy: number, calibration: boolean): number {
+  return calibration ? Math.max(redundancy, CALIBRATION_ANSWERS) : redundancy;
+}
+
 /** Derived for listing and filtering; not stored. */
 export const ITEM_STATES = ['unlabeled', 'in_progress', 'needs_review', 'finalized'] as const;
 export type ItemState = (typeof ITEM_STATES)[number];

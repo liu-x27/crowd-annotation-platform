@@ -1,0 +1,2 @@
+ALTER TABLE "items" ADD COLUMN "calibration" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "items_calibration_open_idx" ON "items" USING btree ("project_id","seq") WHERE "items"."calibration" and "items"."finalized_at" is null;

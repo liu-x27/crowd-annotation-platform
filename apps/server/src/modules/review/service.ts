@@ -21,6 +21,7 @@ import {
 import { answerSql, finalizeOpenItem } from '../../lib/answers';
 import { annotationView, finalView } from '../../lib/dto';
 import { conflict, notFound } from '../../lib/errors';
+import { requiredSql } from '../../lib/required';
 import { validateAnswer } from '../annotate/queue';
 
 type Filter = 'all' | 'disagreement' | 'flagged' | 'draft_overridden';
@@ -47,7 +48,7 @@ export function majorityOf(
  * three facts in JS, from the same definition of a same answer, for the page shown.
  */
 const candidates = (project: ProjectRow) => sql`
-  select i.id, i.seq, i.human_count,
+  select i.id, i.seq, i.human_count, i.calibration,
     (select count(distinct ${answerSql('a')}) from annotations a
        where a.item_id = i.id and a.source = 'human' and a.status = 'submitted') as distinct_answers,
     exists(select 1 from annotations a
@@ -61,7 +62,7 @@ const candidates = (project: ProjectRow) => sql`
   where i.project_id = ${project.id} and i.finalized_at is null and i.human_count > 0`;
 
 const inQueue = (project: ProjectRow) =>
-  sql`(c.human_count >= ${project.settings.redundancy} or c.flagged)`;
+  sql`(c.human_count >= ${requiredSql('c', project.settings.redundancy)} or c.flagged)`;
 
 const filterSql = (filter: Filter) => {
   switch (filter) {
