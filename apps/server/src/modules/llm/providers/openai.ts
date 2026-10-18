@@ -7,11 +7,20 @@ import {
   withTimeout,
 } from '../types';
 
+/** The least max_tokens sent, whatever the task needs for its answer alone. */
+const THINKING_ROOM = 4096;
+
 /**
  * Any server that speaks the OpenAI chat-completions dialect: vLLM, LM Studio, llama.cpp's
  * server, or a hosted non-Anthropic model. Asks for `json_schema` output and falls back to
  * `json_object`, then to no constraint, for servers that do not support it; the answer is
  * validated either way.
+ *
+ * A model that thinks before answering (qwen3 through Ollama's /v1, say) spends tokens the
+ * answer never shows, and a cap sized for the answer alone cuts it off before the answer
+ * begins: Ollama then returns an empty message with finish_reason "length". Unlike Ollama's
+ * own API, the OpenAI dialect has no portable way to ask a model not to think, so the cap
+ * leaves room for it, and an answer that was cut off is reported as that.
  */
 export class OpenAiCompatibleProvider implements LlmProvider {
   readonly id = 'openai' as const;
@@ -91,7 +100,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
             model: req.model,
             messages: [{ role: 'system', content: req.system }, ...req.messages],
             temperature: req.temperature,
-            max_tokens: req.maxTokens,
+            max_tokens: Math.max(req.maxTokens, THINKING_ROOM),
             ...format,
           }),
           signal: withTimeout(req.signal, this.timeoutMs),
@@ -123,11 +132,18 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       if (!res.ok)
         throw new ProviderError(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`, false);
       const json = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
+        choices?: { message?: { content?: string }; finish_reason?: string }[];
         model?: string;
       };
+      const choice = json.choices?.[0];
+      if (choice?.finish_reason === 'length' && !choice.message?.content?.trim()) {
+        throw new ProviderError(
+          `The answer was cut off at ${Math.max(req.maxTokens, THINKING_ROOM)} tokens before it began; a model that thinks first may need more.`,
+          false,
+        );
+      }
       return {
-        text: json.choices?.[0]?.message?.content ?? '',
+        text: choice?.message?.content ?? '',
         model: `openai:${json.model ?? req.model}`,
         latencyMs: Math.round(performance.now() - started),
       };
