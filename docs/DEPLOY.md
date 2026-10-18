@@ -74,9 +74,10 @@ What to expect from it:
 - **Anyone can be the admin.** Demo mode lists every account on the sign-in page and enters
   any of them without a password. Never turn it on for an instance with real data.
 - **It is small.** 0.1 CPU and 512 MB. Without `LOW_MEMORY` the demo container peaked at
-  1,003 MiB in CI, so on this plan it would be restarted for using too much memory;
-  with it, CI checks that it starts and trains a model within 512 MB. Browsing and
-  annotating are fine; training a model or drafting a project is slow.
+  about 1 GB in CI (1,003 and 1,015 MiB in two runs), so on this plan it would be restarted
+  for using too much memory; with it, it peaked at 216 MiB, and CI checks that it starts
+  and trains a model within 512 MB. Browsing and annotating are fine; training a model or
+  drafting a project is slow.
 
 Not checked from here: Render itself. CI builds the image the way Render will
 (`--build-arg DEMO_MODE=true`) and checks that it starts as a demo — the accounts listed,

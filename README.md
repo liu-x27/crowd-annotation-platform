@@ -17,7 +17,7 @@ human labels, and every number reported against the source it came from.
 ![Postgres](https://img.shields.io/badge/Postgres-embedded_PGlite_or_a_server-17171a?style=flat-square&logo=postgresql&logoColor=white)
 ![React 19](https://img.shields.io/badge/React_19-Tailwind_4-17171a?style=flat-square&logo=react&logoColor=white)
 ![LLM drafts](https://img.shields.io/badge/drafts-Ollama_·_Claude_·_OpenAI--compatible-fcd34d?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-107-17171a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-118-17171a?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-17171a?style=flat-square)](LICENSE)
 
 **[Project page](https://liu-x27.github.io/crowd-annotation-platform/)** · [Why a rewrite](#why-a-rewrite) · [What it does](#what-it-does) · [Running it](#running-it) · [Status](#status) · [Architecture](docs/ARCHITECTURE.md)
@@ -165,6 +165,7 @@ The ones that matter most:
 | `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` | any OpenAI-compatible server |
 | `ALLOW_REGISTRATION` | whether people can create annotator accounts themselves |
 | `DEMO_MODE` | one-click sign-in as any account — for public demos only |
+| `LOW_MEMORY` | a smaller embedded Postgres, for instances with about 512 MB; queries are slower |
 
 **A demo instance.** Point `DATA_DIR` at an empty directory (e.g. `./data/demo`), then:
 
@@ -183,6 +184,15 @@ MongoDB without writing to it. See [docs/MIGRATING_FROM_V1.md](docs/MIGRATING_FR
 
 **Locked out:** `npm run create-admin -- --username <name> --password <password> [--reset]`.
 
+**In a container:** CI publishes an image from `main`.
+
+```bash
+docker run -p 4000:4000 -v crowd-data:/data ghcr.io/liu-x27/crowd-annotation-platform
+```
+
+[docs/DEPLOY.md](docs/DEPLOY.md) covers its configuration, a Postgres server, and a public
+demo on Render's free plan ([render.yaml](render.yaml)).
+
 ## Layout
 
 ```
@@ -190,7 +200,9 @@ apps/server       Hono API · Drizzle schema and migrations · job runner · LLM
                   · training worker · v1 migration · demo seed
 apps/web          React 19 · TanStack Query · Tailwind 4 · Radix · hand-drawn SVG charts
 packages/shared   zod schemas and API types used by both, code-point span utilities
-docs/             ARCHITECTURE.md · MIGRATING_FROM_V1.md · screenshots
+docs/             ARCHITECTURE.md · MIGRATING_FROM_V1.md · DEPLOY.md · screenshots
+load/             k6 load test of claim → submit, and the check of the database after it
+scripts/          smoke tests of a running instance and of the container image
 ```
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the data model, the claim query, the
@@ -199,14 +211,20 @@ job runner, the drafting pipeline and why each piece is the way it is.
 ## Tests
 
 ```bash
-npm test           # 107 tests: shared 21, server 81, web 5
+npm test           # 109 tests: shared 21, server 83, web 5
 npm run typecheck
 npm run lint
+TEST_DATABASE_URL=postgres://user:password@localhost:5432/postgres npm test -w @crowd/server
 ```
 
 Server tests run against a fresh in-memory Postgres per file and call the app without
-opening a port. Among what they pin down: two annotators asking at the same moment never
-get the same item, and redundancy 2 never reaches a third person; an expired lease frees
+opening a port. With `TEST_DATABASE_URL` (a role that may create databases) they run on
+that Postgres server instead, each file on its own copy of a template database migrated
+once per run, together with nine
+tests that need connections running in parallel (`postgres.test.ts`); CI does both, on
+Postgres 18. Among what they pin down: two annotators asking at the same moment never
+get the same item, and redundancy 2 never reaches a third person, also when a claim
+commits while another claim's scan is on its way to the same item; an expired lease frees
 the item; a returned answer comes back to its author first; failed model calls are
 recorded as errors, never as labels; an item is never shown its own answer as a worked
 example; no test item ever contributes a training label; the human-only export contains no
@@ -224,18 +242,40 @@ statistics and a streaming JSONL export (47,247 rows, 6.6 MB, under 0.6 s) on it
 project, 47,345 items; a demo instance seeded end to end with qwen3:4b; the UI in Edge,
 in both languages and both themes.
 
+Tested in [CI](.github/workflows/ci.yml), for every push to `main` and every pull request:
+
+- **A Postgres server.** The server suite runs on Postgres 18 as well as on the embedded
+  one, with nine more tests that need connections running in parallel. The first run
+  found a bug: a claim made in one statement could give an item to more people than
+  the project's redundancy allows. `SKIP LOCKED` passes over an item only while another
+  claim holds it, and the scan's snapshot can predate a claim committed in between. Claims
+  now check the item again once it is locked
+  ([ARCHITECTURE.md](docs/ARCHITECTURE.md#the-annotation-lifecycle)). A second race, seen in
+  the code and then made to fail in CI, is fixed the same way: renewing a claim whose lease
+  had run out, while someone else was taking the item, left the item with two holders, and
+  a reviewer finalising it at that moment turned the renewal into a 500.
+- **Load.** k6 runs 24 annotators looping claim → submit through 4,000 items at redundancy
+  1 and 4,000 at redundancy 2, after which the database is asked whether every item was
+  answered exactly as often as its project asks. Before the fix, 215 and 400 items were
+  answered once too often, while no request failed; since, none. k6, the server and
+  Postgres share one runner, so its timings are only for comparing runs with each other:
+  since the fix, 67 to 80 submits a second, and a median of 210 to 280 ms for a submit and
+  the next claim. It remains a single-node application by design: jobs run in-process.
+- **The container image.** Multi-stage, non-root, data in a `/data` volume, a health
+  check. It is smoke-tested from a first admin to an export and again after a restart,
+  published to `ghcr.io/liu-x27/crowd-annotation-platform` with a build provenance
+  attestation, then pulled back, verified and smoke-tested again. The demo variant that
+  Render would build starts as a demo and trains a model within 512 MB with
+  `LOW_MEMORY=true` (peak 216 MiB; 1,015 MiB without it).
+
 Not tested:
 
 - **The Claude provider** has never been called. It is written against the official SDK,
   but no API key was available here, and the tests only use the mock provider.
 - **The OpenAI-compatible provider** has not been run against a real server.
-- **A real Postgres server.** The schema and queries are the same, but locally the suite
-  has only run on the embedded Postgres, which serialises everything on one connection.
-  The concurrency tests show claims are correct under interleaving; they cannot show
-  `SKIP LOCKED`, or the row locks bulk review takes, behaving under true parallel load.
-- **Load.** No load test. Jobs run in-process, so it is a single-node application by design.
-- **Deployment.** No container image yet; the only deployment exercised is `npm start` on
-  one machine.
+- **A hosted deployment.** [render.yaml](render.yaml) and [docs/DEPLOY.md](docs/DEPLOY.md)
+  describe a demo on Render's free plan, but no service has been created, so Render itself
+  is unchecked.
 - **Accessibility** beyond keyboard use and screen-reader tables behind the charts has not
   been audited.
 
