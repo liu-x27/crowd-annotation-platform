@@ -28,6 +28,7 @@ export const qk = {
   overview: (id: number) => ['stats', id, 'overview'] as const,
   agreement: (id: number) => ['stats', id, 'agreement'] as const,
   drafts: (id: number, ref: string) => ['stats', id, 'drafts', ref] as const,
+  calibration: (id: number, epsilon: number) => ['stats', id, 'calibration', epsilon] as const,
   providers: ['providers'] as const,
   models: (id: number) => ['models', id] as const,
   jobs: (id?: number) => ['jobs', id ?? 'all'] as const,
@@ -59,6 +60,11 @@ export const useDraftQuality = (
     queryKey: qk.drafts(id, reference),
     queryFn: () => api.stats.drafts(id, reference),
     enabled,
+  });
+export const useCalibration = (id: number, epsilon: number) =>
+  useQuery({
+    queryKey: qk.calibration(id, epsilon),
+    queryFn: () => api.calibration.report(id, epsilon),
   });
 export const useJobs = (projectId?: number, enabled = true) =>
   useQuery({ queryKey: qk.jobs(projectId), queryFn: () => api.jobs.list(projectId), enabled });

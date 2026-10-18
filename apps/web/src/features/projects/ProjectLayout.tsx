@@ -7,6 +7,7 @@ import {
   Settings2,
   ShieldCheck,
   Table2,
+  Target,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useOutletContext, useParams } from 'react-router';
@@ -31,6 +32,7 @@ const TABS: { key: string; path: string; icon: ReactNode; cap: Capability }[] = 
   { key: 'review', path: 'review', icon: <ShieldCheck />, cap: 'review' },
   { key: 'data', path: 'data', icon: <Table2 />, cap: 'project:read_all' },
   { key: 'llm', path: 'llm', icon: <Bot />, cap: 'llm:run' },
+  { key: 'calibration', path: 'calibration', icon: <Target />, cap: 'project:read_all' },
   { key: 'models', path: 'models', icon: <FlaskConical />, cap: 'project:read_all' },
   { key: 'settings', path: 'settings', icon: <Settings2 />, cap: 'project:manage' },
 ];

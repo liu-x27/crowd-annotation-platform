@@ -21,6 +21,9 @@ const DataPage = lazy(() =>
   import('./features/data/DataPage').then((m) => ({ default: m.DataPage })),
 );
 const LlmPage = lazy(() => import('./features/llm/LlmPage').then((m) => ({ default: m.LlmPage })));
+const CalibrationPage = lazy(() =>
+  import('./features/calibration/CalibrationPage').then((m) => ({ default: m.CalibrationPage })),
+);
 const ModelsPage = lazy(() =>
   import('./features/models/ModelsPage').then((m) => ({ default: m.ModelsPage })),
 );
@@ -69,6 +72,7 @@ export const router = createBrowserRouter([
           { path: 'review', element: <ReviewPage /> },
           { path: 'data', element: <DataPage /> },
           { path: 'llm', element: <LlmPage /> },
+          { path: 'calibration', element: <CalibrationPage /> },
           { path: 'models', element: <ModelsPage /> },
           { path: 'settings', element: <SettingsPage /> },
         ],

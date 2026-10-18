@@ -5,6 +5,7 @@ import type {
   AssignmentsView,
   AuthState,
   BulkFinalizeInput,
+  CalibrationReport,
   ClaimView,
   CreateProjectInput,
   CreateUserInput,
@@ -179,6 +180,13 @@ export const api = {
       post<{ finalized: number; skipped: number }>(`/projects/${pid}/review/bulk-finalize`, body),
     reject: (pid: number, annId: number, note: string) =>
       post<{ ok: true }>(`/projects/${pid}/annotations/${annId}/reject`, { note }),
+  },
+  calibration: {
+    report: (pid: number, epsilon: number) =>
+      get<CalibrationReport>(`/projects/${pid}/calibration`, { epsilon: String(epsilon) }),
+    draw: (pid: number, size: number) =>
+      post<{ drawn: number }>(`/projects/${pid}/calibration`, { size }),
+    clear: (pid: number) => del<{ cleared: number }>(`/projects/${pid}/calibration`),
   },
   stats: {
     overview: (pid: number) => get<Overview>(`/projects/${pid}/stats/overview`, { tz: tz() }),
