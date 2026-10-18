@@ -187,6 +187,13 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
     }
 
     /**
+     * The scan that locks a fresh item, by how it begins: pg_stat_activity keeps only the
+     * first 1,024 bytes of a statement (track_activity_query_size), and the queue's runs
+     * past that, so its closing `skip locked` is not there to match.
+     */
+    const SCAN = '%select i.id from items i%where%i.project_id%';
+
+    /**
      * Start `claim`, and commit `pending` while the claim's scan is under way. A statement
      * shows as active from the moment it is parsed, before it takes its snapshot, so the
      * commit waits until it has run for 50 ms; and the scan must still be running after the
@@ -195,9 +202,9 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
     async function commitMidScan<T>(pending: PgClient, claim: () => Promise<T>) {
       const started = performance.now();
       const claiming = claim();
-      await seen('%skip locked%', { forMs: 50 });
+      await seen(SCAN, { forMs: 50 });
       await pending.query('commit');
-      const stillScanning = await running('%skip locked%');
+      const stillScanning = await running(SCAN);
       const result = await claiming;
       return { result, stillScanning, ms: Math.round(performance.now() - started) };
     }
