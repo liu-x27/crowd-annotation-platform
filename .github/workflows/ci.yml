@@ -108,8 +108,10 @@ jobs:
             -c "select pg_reload_conf()"
       - name: Start the server
         run: |
-          # The probe times waits on the pg pool from outside the app; see load/pool-probe.mjs.
-          nohup node --import ./load/pool-probe.mjs apps/server/dist/index.js > server.log 2>&1 &
+          # The probes time waits on the pg pool and profile the main thread's CPU from
+          # outside the app; see load/pool-probe.mjs and load/cpu-probe.mjs.
+          nohup node --import ./load/pool-probe.mjs --import ./load/cpu-probe.mjs \
+            apps/server/dist/index.js > server.log 2>&1 &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           for _ in $(seq 1 60); do
             curl -fsS http://127.0.0.1:4000/api/health && exit 0
@@ -137,6 +139,16 @@ jobs:
       - name: Where the time went
         if: ${{ !cancelled() && steps.k6.outcome != 'skipped' }}
         run: node load/profile.mjs report k6-summary.json
+      - name: Where the server's CPU went
+        if: ${{ !cancelled() && steps.k6.outcome != 'skipped' }}
+        run: node load/cpu-report.mjs
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && steps.k6.outcome != 'skipped' }}
+        with:
+          name: server-cpu-profile
+          path: server.cpuprofile
+          retention-days: 14
+          if-no-files-found: ignore
       - name: Check every item was answered exactly as often as its redundancy asks
         if: ${{ !cancelled() && steps.k6.outcome != 'skipped' }}
         run: node load/check.mjs k6-summary.json
