@@ -68,7 +68,7 @@ rejected at the API rather than stored.
 
 `GET /projects/:id/queue` serves, in order: the caller's open claim (renewing its lease),
 then work a reviewer returned to them, then a fresh item. A fresh item is claimed in two
-statements, in one transaction:
+statements, in one transaction (calibration items first; see [Calibration](#calibration)):
 
 ```sql
 SELECT i.id FROM items i
@@ -141,6 +141,49 @@ whose UPDATE only matches an item that is still open, so two decisions racing on
 item cannot both land. A reviewer finalising an already-final item gets a conflict and is
 told to reopen it. Bulk finalise locks its items before reading their answers, so the
 majority it writes is computed from answers that cannot change under it.
+
+## Calibration
+
+A calibration set is a project's reference for judging its drafts.
+`POST /projects/:id/calibration { size }` draws it once: of the items nobody has answered or
+claimed, the first `size` in the order of `md5('calibration:' || project_id || ':' || id)`,
+a uniform sample anyone can draw again. Those items carry `calibration = true`, and three
+things change for them:
+
+- **Served first.** A fresh claim first looks for an eligible calibration item, over the
+  partial index `items_calibration_open_idx (project_id, seq) where calibration and
+  finalized_at is null`, and only then for any item. Two statements rather than one
+  ordered by the flag, so each walks an index in `seq` order; in a project without a set
+  the first finds nothing at once.
+- **Blind.** `draft_shown` is false whatever the project's draft mode or blind rate.
+- **At least three answers.** An item is complete at `requiredAnswers(redundancy,
+  calibration)` answers: the redundancy, or for a calibration item at least
+  `CALIBRATION_ANSWERS` (3). The claim filter, the lease-renewal check, consensus, the
+  review queue, the progress counts and the item list's states all go through it, or
+  through `requiredSql`, its twin in SQL.
+
+`GET /projects/:id/calibration?epsilon=` reports from blind answers only, those with
+`draft_shown` not true, on classification projects:
+
+- **Draft accuracy** against each complete item's most common blind answer (ties left
+  out), with a 95% Wilson interval.
+- **The alternative annotator test** (Calderon, Reichart & Dror, ACL 2025). Leave each
+  annotator out in turn; item by item, score the draft and that annotator by how often they
+  agree with the rest (a tie is a win for both); test with a one-sided t-test whether the
+  draft trails the annotator by more than ε; correct the p-values with Benjamini–Yekutieli
+  at q = 0.05; pass if the draft holds up against at least half the annotators. As in the
+  authors' code, annotators with fewer than 30 calibration items and items with fewer than
+  2 answers are left out.
+- **Label shares** among the drafted items, from the drafts alone, from the calibration set
+  alone, and with PPI++: calibration items with a reference and a draft are the labelled
+  sample, other drafted items the unlabelled one; λ is tuned per label and clipped to
+  [0, 1], and the interval is normal, at 95%. When the drafts carry no information λ is 0
+  and the estimate is the calibration set's own.
+
+The statistics are in `packages/shared/src/stats.ts`, with no dependencies. `stats.test.ts`
+holds them to values scipy, statsmodels and ppi_py produced (`scripts/stats_reference.py`
+makes them), and the alternative annotator test reproduces the 30 results the authors'
+notebook prints for their data.
 
 ## Background jobs
 
