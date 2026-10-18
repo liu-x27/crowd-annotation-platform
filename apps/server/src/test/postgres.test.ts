@@ -36,21 +36,32 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
     return c;
   }
 
+  /** Whether another connection is running a statement that matches `pattern`. */
+  async function running(
+    pattern: string,
+    opts: { waiting?: boolean; forMs?: number } = {},
+  ): Promise<boolean> {
+    const found = await monitor.query(
+      `select 1 from pg_stat_activity
+       where datname = current_database() and pid <> pg_backend_pid()
+         and state = 'active' and query ilike $1
+         and ($2::boolean is not true or wait_event_type = 'Lock')
+         and clock_timestamp() - query_start >= make_interval(secs => $3::float8 / 1000)`,
+      [pattern, opts.waiting ?? false, opts.forMs ?? 0],
+    );
+    return (found.rowCount ?? 0) > 0;
+  }
+
   /**
-   * Resolves once another connection is running a statement that matches `pattern` — or,
-   * with `waiting`, is blocked on a lock in one.
+   * Resolves once another connection is running a statement that matches `pattern` — for
+   * at least `forMs`, or, with `waiting`, blocked on a lock in it.
    */
-  async function seen(pattern: string, opts: { waiting?: boolean } = {}): Promise<void> {
+  async function seen(
+    pattern: string,
+    opts: { waiting?: boolean; forMs?: number } = {},
+  ): Promise<void> {
     const deadline = Date.now() + 15_000;
-    for (;;) {
-      const found = await monitor.query(
-        `select 1 from pg_stat_activity
-         where datname = current_database() and pid <> pg_backend_pid()
-           and state = 'active' and query ilike $1
-           and ($2::boolean is not true or wait_event_type = 'Lock')`,
-        [pattern, opts.waiting ?? false],
-      );
-      if (found.rowCount) return;
+    while (!(await running(pattern, opts))) {
       if (Date.now() > deadline) throw new Error(`no statement like ${pattern} was seen`);
     }
   }
@@ -133,11 +144,10 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
    * a snapshot taken when its statement began: a claim on the same item that commits while
    * the scan is still on its way there is invisible to it, and having committed it no longer
    * holds the lock, so nothing stops the item being taken twice. A long run of items held by
-   * someone else ahead of the contested one makes the scan slow enough to commit in that
-   * window every time.
+   * someone else ahead of the contested one makes the scan slow enough to commit inside it.
    */
   describe('a claim that commits while another is scanning towards the same item', () => {
-    const AHEAD = 50_000;
+    const AHEAD = 100_000;
 
     async function contested(name: string) {
       const p = await h.project({ name });
@@ -176,42 +186,71 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
       return c;
     }
 
-    it('is taken again by a claim made in a single statement (the window is real)', async () => {
+    /**
+     * Start `claim`, and commit `pending` while the claim's scan is under way. A statement
+     * shows as active from the moment it is parsed, before it takes its snapshot, so the
+     * commit waits until it has run for 50 ms; and the scan must still be running after the
+     * commit, or it may have reached the item while the item was still locked.
+     */
+    async function commitMidScan<T>(pending: PgClient, claim: () => Promise<T>) {
+      const started = performance.now();
+      const claiming = claim();
+      await seen('%skip locked%', { forMs: 50 });
+      await pending.query('commit');
+      const stillScanning = await running('%skip locked%');
+      const result = await claiming;
+      return { result, stillScanning, ms: Math.round(performance.now() - started) };
+    }
+
+    it('is taken again by a claim made in a single statement (the window is real)', async ({
+      annotate,
+    }) => {
       const { projectId, x, first, second } = await contested('window');
       const pending = await pendingClaim(projectId, x, first.me.id);
+      const conn = await connect();
       // Select-and-insert in one statement, the way claims used to be made.
-      const claiming = (await connect()).query<{ item_id: number }>(
-        `with candidate as (
-           select i.id from items i
-           where i.project_id = $1 and i.finalized_at is null
-             and (select count(*) from annotations a
-                  where a.item_id = i.id and a.source = 'human'
-                    and (a.status = 'submitted'
-                         or (a.status = 'claimed' and a.lease_expires_at > now()))) < 1
-           order by i.seq limit 1
-           for update of i skip locked)
-         insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
-         select $1, id, 'human', $2, 'claimed', now() + interval '30 minutes' from candidate
-         returning item_id`,
-        [projectId, second.me.id],
+      const { result, stillScanning, ms } = await commitMidScan(pending, () =>
+        conn.query<{ item_id: number }>(
+          `with candidate as (
+             select i.id from items i
+             where i.project_id = $1 and i.finalized_at is null
+               and (select count(*) from annotations a
+                    where a.item_id = i.id and a.source = 'human'
+                      and (a.status = 'submitted'
+                           or (a.status = 'claimed' and a.lease_expires_at > now()))) < 1
+             order by i.seq limit 1
+             for update of i skip locked)
+           insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
+           select $1, id, 'human', $2, 'claimed', now() + interval '30 minutes' from candidate
+           returning item_id`,
+          [projectId, second.me.id],
+        ),
       );
-      await seen('%skip locked%');
-      await pending.query('commit');
-      const { rows: taken } = await claiming;
-      expect({ taken: taken.map((r) => r.item_id), holders: await holding(x) }).toEqual({
+      await annotate(
+        `A one-statement claim past ${AHEAD} held items took ${ms} ms; the commit landed mid-scan: ${stillScanning}`,
+        'notice',
+      );
+      expect(stillScanning).toBe(true);
+      expect({ taken: result.rows.map((r) => r.item_id), holders: await holding(x) }).toEqual({
         taken: [x],
         holders: 2,
       });
     });
 
-    it('is not taken again by the queue, which serves the next item instead', async () => {
+    it('is not taken again by the queue, which serves the next item instead', async ({
+      annotate,
+    }) => {
       const { projectId, x, first, second } = await contested('queue');
       const pending = await pendingClaim(projectId, x, first.me.id);
-      const claiming = queue(second, projectId);
-      await seen('%skip locked%');
-      await pending.query('commit');
-      const view = await claiming;
-      expect({ served: view.claim!.item.seq, holders: await holding(x) }).toEqual({
+      const { result, stillScanning, ms } = await commitMidScan(pending, () =>
+        queue(second, projectId),
+      );
+      await annotate(
+        `The queue past ${AHEAD} held items took ${ms} ms; the commit landed mid-scan: ${stillScanning}`,
+        'notice',
+      );
+      expect(stillScanning).toBe(true);
+      expect({ served: result.claim!.item.seq, holders: await holding(x) }).toEqual({
         served: AHEAD + 2,
         holders: 1,
       });
