@@ -512,20 +512,23 @@
       <div class="kicker"><b>04</b><span>Claims</span></div>
       <h2>Two people never get the same item by accident.</h2>
       <div class="grid g2" style="margin-top: 8px">
-        <pre class="term"><span class="k">WITH</span> candidate <span class="k">AS</span> (
-  <span class="k">SELECT</span> i.id <span class="k">FROM</span> items i
-  <span class="k">WHERE</span> <span class="p">&lt;eligible for this user&gt;</span>
-  <span class="k">ORDER BY</span> i.seq <span class="k">LIMIT</span> 1
-  <span class="y">FOR UPDATE OF i SKIP LOCKED</span>
-)
+        <pre class="term"><span class="k">SELECT</span> i.id <span class="k">FROM</span> items i
+<span class="k">WHERE</span> <span class="p">&lt;eligible for this user&gt;</span>
+<span class="k">ORDER BY</span> i.seq <span class="k">LIMIT</span> 1
+<span class="y">FOR UPDATE OF i SKIP LOCKED</span>;
+
 <span class="k">INSERT INTO</span> annotations (…, status, lease_expires_at)
-<span class="k">SELECT</span> …, 'claimed', now() + lease <span class="k">FROM</span> candidate
+<span class="k">SELECT</span> …, 'claimed', now() + lease <span class="k">FROM</span> items i
+<span class="k">WHERE</span> i.id = <span class="p">&lt;that item&gt;</span>
+  <span class="k">AND</span> <span class="p">&lt;eligible for this user&gt;</span>
 <span class="k">ON CONFLICT</span> (item_id, user_id)
   <span class="k">WHERE</span> source = 'human' <span class="k">DO NOTHING</span>
 <span class="k">RETURNING</span> id, item_id;</pre>
         <div class="prose">
-          <p>A fresh item is claimed in one statement. <code>SKIP LOCKED</code> is what makes concurrent requests pick
-            different items on real Postgres; a per-user advisory lock stops two browser tabs opening two claims.</p>
+          <p>A fresh item is locked, then claimed. <code>SKIP LOCKED</code> is what makes concurrent requests pick
+            different items on real Postgres. The claim asks again once the lock is held, because the first
+            statement’s filter reads a snapshot from when it began: a claim committed meanwhile would be missed and the
+            item handed out twice. A per-user advisory lock stops two browser tabs opening two claims.</p>
           <p><strong>Leases expire on their own.</strong> There is no sweeper: the eligibility query ignores claims whose
             lease is in the past. Redundancy N gives every item to N different people, and never to an N+1th.</p>
           <p><strong>A submit is one transaction</strong> that updates the answer, its item’s count and, when the project

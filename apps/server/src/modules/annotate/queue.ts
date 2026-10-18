@@ -149,8 +149,9 @@ const leaseInterval = (project: ProjectRow) =>
 
 /**
  * Serve the next item. In order of preference: the user's own open claim, work a reviewer
- * returned to them, then a fresh item. A fresh item is claimed in one statement with
- * `FOR UPDATE SKIP LOCKED`, so two annotators asking at the same moment get different items.
+ * returned to them, then a fresh item. A fresh item is locked with `FOR UPDATE SKIP LOCKED`,
+ * so two annotators asking at the same moment get different items, and checked again once
+ * it is locked, so an item claimed meanwhile is not handed out a second time.
  */
 export async function claimNext(
   db: Db,
@@ -219,24 +220,45 @@ export async function claimNext(
       return claimView(tx, project, reopened!, returned.i);
     }
 
-    // 3. A fresh item.
-    const claimed = await rows<{ id: number; item_id: number }>(
-      tx,
-      sql`
-        with candidate as (
+    // 3. A fresh item: lock the first eligible one nobody else holds, then insert the claim
+    // in a second statement that asks again whether it is eligible. The first statement's
+    // filter reads a snapshot from when it began, and SKIP LOCKED only passes over items
+    // locked when the scan reaches them: a claim on the same item that commits in between is
+    // invisible to the filter and no longer holds the lock, and Postgres re-checks a row it
+    // locks only if the row was updated, which a claim does not do. The second statement's
+    // snapshot is taken once the lock is held, so it sees every claim committed on the item.
+    // If the item has gone, try the next one.
+    const passedOver: number[] = [];
+    let hit: { id: number; item_id: number } | undefined;
+    while (!hit) {
+      const notPassedOver = passedOver.length
+        ? sql`and i.id not in (${sql.join(
+            passedOver.map((id) => sql`${id}`),
+            sql`, `,
+          )})`
+        : sql``;
+      const [candidate] = await rows<{ id: number }>(
+        tx,
+        sql`
           select i.id from items i
-          where ${eligible(project, user.id)}
+          where ${eligible(project, user.id)} ${notPassedOver}
           order by i.seq
           limit 1
-          for update of i skip locked
-        )
-        insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
-        select ${project.id}, id, 'human', ${user.id}, 'claimed', ${leaseInterval(project)} from candidate
-        on conflict (item_id, user_id) where source = 'human' do nothing
-        returning id, item_id`,
-    );
-    const hit = claimed[0];
-    if (!hit) return null;
+          for update of i skip locked`,
+      );
+      if (!candidate) return null;
+      [hit] = await rows<{ id: number; item_id: number }>(
+        tx,
+        sql`
+          insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
+          select ${project.id}, i.id, 'human', ${user.id}, 'claimed', ${leaseInterval(project)}
+          from items i
+          where i.id = ${candidate.id} and ${eligible(project, user.id)}
+          on conflict (item_id, user_id) where source = 'human' do nothing
+          returning id, item_id`,
+      );
+      passedOver.push(candidate.id);
+    }
     const draft = await draftFor(tx, hit.item_id);
     const [ann] = await tx
       .update(annotations)

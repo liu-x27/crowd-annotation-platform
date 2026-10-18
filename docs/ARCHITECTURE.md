@@ -67,25 +67,34 @@ rejected at the API rather than stored.
 ```
 
 `GET /projects/:id/queue` serves, in order: the caller's open claim (renewing its lease),
-then work a reviewer returned to them, then a fresh item. A fresh item is claimed in one
-statement:
+then work a reviewer returned to them, then a fresh item. A fresh item is claimed in two
+statements, in one transaction:
 
 ```sql
-WITH candidate AS (
-  SELECT i.id FROM items i
-  WHERE <eligible for this user>          -- not final, < redundancy answers or live claims,
-  ORDER BY i.seq LIMIT 1                  -- not already touched by this user, inside their
-  FOR UPDATE OF i SKIP LOCKED             -- assignment ranges (or outside everyone's)
-)
+SELECT i.id FROM items i
+WHERE <eligible for this user>          -- not final, < redundancy answers or live claims,
+ORDER BY i.seq LIMIT 1                  -- not already touched by this user, inside their
+FOR UPDATE OF i SKIP LOCKED;            -- assignment ranges (or outside everyone's)
+
 INSERT INTO annotations (…, status, lease_expires_at)
-SELECT …, 'claimed', now() + lease FROM candidate
+SELECT …, 'claimed', now() + lease FROM items i
+WHERE i.id = <the item just locked> AND <eligible for this user>
 ON CONFLICT (item_id, user_id) WHERE source = 'human' DO NOTHING
 RETURNING id, item_id;
 ```
 
 `SKIP LOCKED` is what makes concurrent requests pick different items on real Postgres; on
-PGlite the single connection serialises them anyway. A per-(project, user) advisory lock
-stops two browser tabs from opening two claims. Leases expire on their own — there is no
+PGlite the single connection serialises them anyway. It is not enough on its own, which is
+why the claim is not one statement. Under READ COMMITTED a statement's filter reads a
+snapshot taken when the statement began, and `SKIP LOCKED` only passes over items locked
+at the moment the scan reaches them. A claim on the same item that commits in between is
+invisible to the filter and, having committed, no longer holds the lock; Postgres re-checks
+a row it locks only if the row was updated, and a claim only locks the item. A one-statement
+claim therefore takes that item a second time. The `INSERT` starts after the lock is held,
+so its snapshot includes every claim committed on the item; if the item is no longer
+eligible, the next one is tried. `postgres.test.ts` opens that window on a Postgres server
+and shows both behaviours. A per-(project, user) advisory lock stops two browser tabs from
+opening two claims. Leases expire on their own — there is no
 sweeper; the eligibility query simply ignores claims whose lease is in the past.
 
 A submit updates the annotation, increments `items.human_count`, and — if the project
