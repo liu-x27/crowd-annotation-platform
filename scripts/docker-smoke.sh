@@ -2,7 +2,7 @@
 # Smoke-test a container image: it runs as a non-root user, declares /data as a volume and
 # a health check, turns healthy, serves the web app and the API, and keeps its data in the
 # volume across a restart. With --demo, an image built with DEMO_MODE=true: a demo instance
-# starts from the demo database it carries.
+# starts from the demo database it carries, trains a model, and does it within 512 MB.
 #
 #   scripts/docker-smoke.sh <image>
 #   scripts/docker-smoke.sh --demo <image>
@@ -28,6 +28,11 @@ trap cleanup EXIT
 healthy() {
   local status=none
   for _ in $(seq 1 45); do
+    if [ "$(docker inspect --format '{{.State.Running}}' "$name")" != true ]; then
+      echo "not ok - stopped: $(docker inspect --format 'exit={{.State.ExitCode}} oom-killed={{.State.OOMKilled}}' "$name")"
+      docker logs "$name"
+      return 1
+    fi
     status=$(docker inspect --format '{{.State.Health.Status}}' "$name")
     if [ "$status" = healthy ]; then
       echo "ok - healthy"
@@ -53,13 +58,25 @@ config Volumes | grep -q '"/data"' || { echo "not ok - no /data volume"; exit 1;
 echo "ok - runs as node, /data is a volume, has a health check"
 report "$($demo && echo Demo image || echo Image) size" "$(docker image inspect --format '{{.Size}}' "$image" | awk '{printf "%.0f MB", $1 / 1e6}')"
 
+# The highest memory use the container's cgroup has seen since it started.
+peak() { docker exec "$name" cat /sys/fs/cgroup/memory.peak | awk '{printf "%.0f MiB", $1 / 1048576}'; }
+
 if $demo; then
-  docker run -d --name "$name" -p "$port:4000" -e DEMO_MODE=true "$image" >/dev/null
-  healthy
-  node "$smoke" "http://127.0.0.1:$port" --demo
-  logs=$(docker logs "$name" 2>&1)
-  echo "$logs" | grep '^Demo:'
-  report "Demo container memory" "$(docker stats --no-stream --format '{{.MemUsage}}' "$name")"
+  # Once without a limit, to see what it needs; then within 512 MB and no swap, as on
+  # Render's free plan, where going over restarts the instance.
+  for limit in none 512m; do
+    flags=()
+    [ "$limit" = none ] || flags=(--memory "$limit" --memory-swap "$limit")
+    docker run -d --name "$name" -p "$port:4000" -e DEMO_MODE=true ${flags[@]+"${flags[@]}"}       "$image" >/dev/null
+    healthy
+    node "$smoke" "http://127.0.0.1:$port" --demo
+    logs=$(docker logs "$name" 2>&1)
+    echo "$logs" | grep '^Demo:'
+    state=$(docker inspect --format 'running={{.State.Running}} oom-killed={{.State.OOMKilled}} restarts={{.RestartCount}}' "$name")
+    [ "$state" = "running=true oom-killed=false restarts=0" ] || { echo "not ok - $state"; exit 1; }
+    report "Demo memory (limit $limit)" "now $(docker stats --no-stream --format '{{.MemUsage}}' "$name"), peak $(peak)"
+    docker rm -f "$name" >/dev/null
+  done
   exit 0
 fi
 
@@ -72,4 +89,4 @@ node "$smoke" "http://127.0.0.1:$port"
 docker restart "$name" >/dev/null
 healthy
 node "$smoke" "http://127.0.0.1:$port" --again
-report "Container memory" "$(docker stats --no-stream --format '{{.MemUsage}}' "$name")"
+report "Container memory" "now $(docker stats --no-stream --format '{{.MemUsage}}' "$name"), peak $(peak)"

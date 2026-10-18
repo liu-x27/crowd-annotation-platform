@@ -137,8 +137,19 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Smoke test
         run: bash scripts/docker-smoke.sh crowd-annotation:ci
-      # What Render builds: it passes the service's DEMO_MODE=true to the build.
-      - name: Build the demo variant
+
+  demo:
+    name: Demo image (as Render builds it, within 512 MB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: docker/setup-buildx-action@v4
+      # Render passes the service's DEMO_MODE=true to the build, which then seeds the demo.
+      - name: Build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -146,7 +157,7 @@ jobs:
           tags: crowd-annotation:demo
           build-args: DEMO_MODE=true
           cache-from: type=gha
-      - name: Smoke test the demo variant
+      - name: Smoke test, then again within 512 MB and no swap
         run: bash scripts/docker-smoke.sh --demo crowd-annotation:demo
 
   publish:

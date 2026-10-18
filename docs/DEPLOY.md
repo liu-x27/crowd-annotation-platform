@@ -72,4 +72,5 @@ What to expect from it:
 
 Not checked from here: Render itself. CI builds the image the way Render will
 (`--build-arg DEMO_MODE=true`) and checks that it starts as a demo — the accounts listed,
-one-click sign-in, three projects, recent activity.
+one-click sign-in, three projects, recent activity — and can train a model, once without
+a memory limit and once within 512 MB and no swap, as on the free plan.

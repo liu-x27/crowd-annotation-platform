@@ -7,8 +7,9 @@
  *
  * Fresh: the web app is served; create the admin, a project and three items; claim and
  * submit one; export it. Again: that admin can still sign in and the answer is still in
- * the export. Demo: the sign-in page lists the demo accounts, one-click sign-in works, and
- * the demo's activity is recent.
+ * the export. Demo: the sign-in page lists the demo accounts, one-click sign-in works, a
+ * student model trains (the heaviest thing a visitor can start), and the demo's activity is
+ * recent.
  */
 const [base, mode = '--fresh'] = process.argv.slice(2);
 const PASSWORD = 'smoke-test-password';
@@ -88,9 +89,17 @@ if (mode === '--fresh') {
 } else if (mode === '--demo') {
   const state = await call('GET', '/api/auth/state');
   ok(state.demo?.length === 5, `lists the demo accounts: ${state.demo?.map((u) => u.username)}`);
-  await call('POST', '/api/auth/demo', { username: 'alice' });
+  await call('POST', '/api/auth/demo', { username: 'admin' });
   const projects = await call('GET', '/api/projects');
   ok(projects.length === 3, 'signs in to a demo with three projects');
+  const project = projects.find((p) => p.type === 'classification');
+  let job = await call('POST', `/api/projects/${project.id}/models`, { epochs: 5 }, 202);
+  for (let i = 0; i < 180 && ['queued', 'running'].includes(job.status); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    job = await call('GET', `/api/jobs/${job.id}`);
+  }
+  ok(job.status === 'succeeded', `trains a model on ${project.name}: ${job.status}`);
+  await call('POST', '/api/auth/demo', { username: 'alice' });
   const stats = await call('GET', '/api/me/stats');
   ok(stats.last7d > 0, `with recent activity: ${stats.last7d} answers in the last 7 days`);
 } else {
