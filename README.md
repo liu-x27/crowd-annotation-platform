@@ -17,7 +17,7 @@ human labels, and every number reported against the source it came from.
 ![Postgres](https://img.shields.io/badge/Postgres-embedded_PGlite_or_a_server-17171a?style=flat-square&logo=postgresql&logoColor=white)
 ![React 19](https://img.shields.io/badge/React_19-Tailwind_4-17171a?style=flat-square&logo=react&logoColor=white)
 ![LLM drafts](https://img.shields.io/badge/drafts-Ollama_·_Claude_·_OpenAI--compatible-fcd34d?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-132-17171a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-135-17171a?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-17171a?style=flat-square)](LICENSE)
 
 **[Project page](https://liu-x27.github.io/crowd-annotation-platform/)** · [Why a rewrite](#why-a-rewrite) · [What it does](#what-it-does) · [Running it](#running-it) · [Status](#status) · [Architecture](docs/ARCHITECTURE.md)
@@ -223,7 +223,7 @@ job runner, the drafting pipeline and why each piece is the way it is.
 ## Tests
 
 ```bash
-npm test           # 123 tests: shared 29, server 89, web 5
+npm test           # 126 tests: shared 29, server 92, web 5
 npm run typecheck
 npm run lint
 npm run a11y       # axe on 14 pages in both themes, against a running demo instance
@@ -257,7 +257,10 @@ data, which gives the winning rate and advantage probability their notebook prin
 30 cases; and an axe scan of 14 pages in both themes (`npm run a11y`, WCAG 2.0–2.2 A and
 AA rules), whose first run found 62 violations, all since fixed: muted text below 4.5:1
 contrast, an unnamed button in the header, and form controls whose label was not tied to
-them.
+them. And the OpenAI-compatible provider against Ollama's `/v1` (`npm run llm:check`): its
+first run got an empty reply for every draft from qwen3:4b, whose thinking used up the
+token cap before the answer began. With room for that, all twelve drafts parse from
+qwen3:4b and from llama3.1:8b.
 
 Tested in [CI](.github/workflows/ci.yml), for every push to `main` and every pull request:
 
@@ -289,7 +292,8 @@ Not tested:
 
 - **The Claude provider** has never been called. It is written against the official SDK,
   but no API key was available here, and the tests only use the mock provider.
-- **The OpenAI-compatible provider** has not been run against a real server.
+  `ANTHROPIC_BASE_URL` can point it at an Anthropic-compatible endpoint and
+  `npm run llm:check` would run it; neither has been tried.
 - **A hosted deployment.** [render.yaml](render.yaml) and [docs/DEPLOY.md](docs/DEPLOY.md)
   describe a demo on Render's free plan, but no service has been created, so Render itself
   is unchecked.
