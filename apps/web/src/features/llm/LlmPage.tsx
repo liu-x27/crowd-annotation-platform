@@ -96,8 +96,12 @@ export function LlmPage() {
                 }))}
               />
             </Field>
-            {provider && !provider.available && (
-              <p className="-mt-2 text-xs text-warning">{provider.reason}</p>
+            {provider?.reason && (
+              <p
+                className={cn('-mt-2 text-xs', provider.available ? 'text-ink-3' : 'text-warning')}
+              >
+                {provider.reason}
+              </p>
             )}
             <Field label={t('llm.model')}>
               {provider && provider.models.length > 0 ? (

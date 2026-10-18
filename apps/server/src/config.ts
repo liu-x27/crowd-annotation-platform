@@ -40,6 +40,7 @@ const envSchema = z.object({
   OLLAMA_BASE_URL: z.url().default('http://localhost:11434'),
   OLLAMA_MODEL: z.string().default('qwen3:4b'),
   ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.url().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-5'),
   OPENAI_BASE_URL: z.url().optional(),
   OPENAI_API_KEY: z.string().optional(),
@@ -70,7 +71,8 @@ export interface Config {
   trustedOrigins: string[];
   cookieSecure: boolean;
   ollama: { baseUrl: string; model: string };
-  anthropic: { apiKey: string | null; model: string };
+  /** `baseUrl` null is Anthropic's API; otherwise an Anthropic-compatible endpoint. */
+  anthropic: { apiKey: string | null; baseUrl: string | null; model: string };
   openai: { baseUrl: string | null; apiKey: string | null; model: string };
   llmConcurrency: number;
   llmTimeoutMs: number;
@@ -109,7 +111,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .filter(Boolean),
     cookieSecure: e.COOKIE_SECURE ?? e.NODE_ENV === 'production',
     ollama: { baseUrl: e.OLLAMA_BASE_URL.replace(/\/+$/, ''), model: e.OLLAMA_MODEL },
-    anthropic: { apiKey: e.ANTHROPIC_API_KEY ?? null, model: e.ANTHROPIC_MODEL },
+    anthropic: {
+      apiKey: e.ANTHROPIC_API_KEY ?? null,
+      baseUrl: e.ANTHROPIC_BASE_URL?.replace(/\/+$/, '') ?? null,
+      model: e.ANTHROPIC_MODEL,
+    },
     openai: {
       baseUrl: e.OPENAI_BASE_URL?.replace(/\/+$/, '') ?? null,
       apiKey: e.OPENAI_API_KEY ?? null,

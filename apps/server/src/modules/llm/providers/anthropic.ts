@@ -14,6 +14,10 @@ const supportsFallbacks = (model: string) => /^claude-(opus-5|fable-5|mythos-5)/
  * Claude through the official SDK. The answer is constrained by `output_config.format`
  * (JSON schema). Sampling parameters are not sent: current models reject `temperature`.
  * The system prompt is identical for every item in a job, so it is cached.
+ *
+ * `baseUrl` points the SDK at an Anthropic-compatible endpoint instead of Anthropic's API.
+ * Such an endpoint answers in the same format but runs its own models, and may ignore
+ * parts of the request; the provider says which endpoint it uses.
  */
 export class AnthropicProvider implements LlmProvider {
   readonly id = 'anthropic' as const;
@@ -23,8 +27,11 @@ export class AnthropicProvider implements LlmProvider {
     apiKey: string | null,
     readonly defaultModel: string,
     timeoutMs: number,
+    private readonly baseUrl: string | null = null,
   ) {
-    this.client = apiKey ? new Anthropic({ apiKey, timeout: timeoutMs, maxRetries: 2 }) : null;
+    this.client = apiKey
+      ? new Anthropic({ apiKey, baseURL: baseUrl, timeout: timeoutMs, maxRetries: 2 })
+      : null;
   }
 
   async describe(): Promise<ProviderInfo> {
@@ -35,7 +42,11 @@ export class AnthropicProvider implements LlmProvider {
     return {
       id: this.id,
       available: this.client != null,
-      reason: this.client ? null : 'Set ANTHROPIC_API_KEY to enable Claude.',
+      reason: !this.client
+        ? 'Set ANTHROPIC_API_KEY to enable Claude.'
+        : this.baseUrl
+          ? `Through ${this.baseUrl}, an Anthropic-compatible endpoint, not Anthropic's API.`
+          : null,
       defaultModel: this.defaultModel,
       models,
     };

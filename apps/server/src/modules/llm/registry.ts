@@ -16,7 +16,12 @@ export class LlmRegistry {
   ) {
     const all: LlmProvider[] = [
       new OllamaProvider(config.ollama.baseUrl, config.ollama.model, config.llmTimeoutMs),
-      new AnthropicProvider(config.anthropic.apiKey, config.anthropic.model, config.llmTimeoutMs),
+      new AnthropicProvider(
+        config.anthropic.apiKey,
+        config.anthropic.model,
+        config.llmTimeoutMs,
+        config.anthropic.baseUrl,
+      ),
       new OpenAiCompatibleProvider(
         config.openai.baseUrl,
         config.openai.apiKey,
