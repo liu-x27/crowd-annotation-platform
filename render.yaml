@@ -17,3 +17,6 @@ services:
         value: 'true'
       - key: ALLOW_REGISTRATION
         value: 'false'
+      # The free plan has 512 MB; without this the embedded Postgres alone can need more.
+      - key: LOW_MEMORY
+        value: 'true'

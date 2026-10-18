@@ -27,6 +27,12 @@ Open http://localhost:4000; on an empty database the first page creates the admi
   anywhere else it needs HTTPS, or `-e COOKIE_SECURE=false` to serve plain HTTP.
 - **A Postgres server** instead of the embedded database: `-e DATABASE_URL=postgres://…`. The
   server applies the migrations when it starts; `/data` then holds only trained models.
+- **A small instance:** `-e LOW_MEMORY=true`. The embedded Postgres keeps a 16 MB buffer
+  cache instead of 128 MB, and Node runs WebAssembly on its baseline compiler only, without
+  optimising Postgres's code. On a laptop, opening the demo database and running a few
+  queries then peaks at about 140 MB of memory instead of 530 MB, and CPU-bound queries in
+  the embedded Postgres take about 1.7 times as long. With `DATABASE_URL` it changes
+  nothing.
 - **Locked out:**
   `docker exec crowd node apps/server/dist/create-admin.js --username <name> --password <password> [--reset]`.
 - **Checking where an image came from:**
@@ -40,8 +46,8 @@ after `docker restart` still has all of it.
 ## A public demo on Render
 
 [render.yaml](../render.yaml) describes one service on Render's free plan: this Dockerfile,
-`DEMO_MODE=true`, registration off, health checks on `/api/health`, and deploys only for
-commits whose CI checks passed.
+`DEMO_MODE=true`, `LOW_MEMORY=true`, registration off, health checks on `/api/health`, and
+deploys only for commits whose CI checks passed.
 
 To create it (in the Render dashboard, with your own account):
 
@@ -67,8 +73,10 @@ What to expect from it:
   sleep waits about a minute.
 - **Anyone can be the admin.** Demo mode lists every account on the sign-in page and enters
   any of them without a password. Never turn it on for an instance with real data.
-- **It is small.** 0.1 CPU and 512 MB: browsing and annotating are fine; training a model or
-  drafting a project is slow.
+- **It is small.** 0.1 CPU and 512 MB. Without `LOW_MEMORY` the demo container peaked at
+  1,003 MiB in CI, so on this plan it would be restarted for using too much memory;
+  with it, CI checks that it starts and trains a model within 512 MB. Browsing and
+  annotating are fine; training a model or drafting a project is slow.
 
 Not checked from here: Render itself. CI builds the image the way Render will
 (`--build-arg DEMO_MODE=true`) and checks that it starts as a demo — the accounts listed,

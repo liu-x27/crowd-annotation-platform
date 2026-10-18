@@ -34,6 +34,7 @@ const envSchema = z.object({
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(14),
   ALLOW_REGISTRATION: flag.default(true),
   DEMO_MODE: flag.default(false),
+  LOW_MEMORY: flag.default(false),
   TRUSTED_ORIGINS: z.string().default('http://localhost:5173,http://127.0.0.1:5173'),
   COOKIE_SECURE: flag.optional(),
   OLLAMA_BASE_URL: z.url().default('http://localhost:11434'),
@@ -60,6 +61,12 @@ export interface Config {
   allowRegistration: boolean;
   /** One-click sign-in as any enabled account. For public demos only; never on a real instance. */
   demoMode: boolean;
+  /**
+   * For instances with about 512 MB: the embedded Postgres keeps a 16 MB buffer cache instead
+   * of 128 MB. The container image also runs Node with WebAssembly on its baseline compiler
+   * (docker-entrypoint.sh). Both trade query speed for memory.
+   */
+  lowMemory: boolean;
   trustedOrigins: string[];
   cookieSecure: boolean;
   ollama: { baseUrl: string; model: string };
@@ -96,6 +103,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionTtlMs: e.SESSION_TTL_DAYS * 86_400_000,
     allowRegistration: e.ALLOW_REGISTRATION,
     demoMode: e.DEMO_MODE,
+    lowMemory: e.LOW_MEMORY,
     trustedOrigins: e.TRUSTED_ORIGINS.split(',')
       .map((s) => s.trim())
       .filter(Boolean),

@@ -31,7 +31,7 @@ export function migrationsFolder(): string {
 }
 
 export async function openDatabase(
-  config: Pick<Config, 'databaseUrl' | 'dataDir'>,
+  config: Pick<Config, 'databaseUrl' | 'dataDir'> & Partial<Pick<Config, 'lowMemory'>>,
 ): Promise<Database> {
   const folder = migrationsFolder();
 
@@ -48,13 +48,19 @@ export async function openDatabase(
   const { PGlite } = await import('@electric-sql/pglite');
   const { drizzle } = await import('drizzle-orm/pglite');
   const { migrate } = await import('drizzle-orm/pglite/migrator');
+  // Postgres's default 128 MB buffer cache lives inside PGlite's WebAssembly memory, while
+  // the operating system caches the same files anyway; a small instance can do with less.
+  // Passed at start, not written to postgresql.conf, so it lasts only while it is set.
+  const options = config.lowMemory
+    ? { startParams: [...PGlite.defaultStartParams, '-c', 'shared_buffers=16MB'] }
+    : {};
   let client: InstanceType<typeof PGlite>;
   if (config.dataDir === ':memory:') {
-    client = new PGlite();
+    client = new PGlite(options);
   } else {
     const dir = path.join(config.dataDir, 'pgdata');
     mkdirSync(dir, { recursive: true });
-    client = new PGlite(dir);
+    client = new PGlite(dir, options);
   }
   const db = drizzle(client, { schema, casing: 'snake_case' });
   await migrate(db, { migrationsFolder: folder });

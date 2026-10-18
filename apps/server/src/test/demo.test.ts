@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { rows } from '../db/client';
 import { shiftTimestamps } from '../db/shift-timestamps';
-import { type Harness, harness } from './harness';
+import { type Harness, harness, testContext } from './harness';
 
 let h: Harness;
 beforeAll(async () => {
@@ -45,4 +45,24 @@ describe('moving a demo database forward', () => {
       }
     }
   });
+});
+
+describe('LOW_MEMORY', () => {
+  // The setting is the embedded database's; a Postgres server keeps its own configuration.
+  it.skipIf(process.env.TEST_DATABASE_URL)(
+    'gives the embedded Postgres a 16 MB buffer cache instead of 128 MB',
+    async () => {
+      const small = await testContext({ lowMemory: true });
+      try {
+        const show = async (db: Harness['deps']['db']) =>
+          (await rows<{ shared_buffers: string }>(db, sql`show shared_buffers`))[0]!.shared_buffers;
+        expect({ low: await show(small.deps.db), normal: await show(h.deps.db) }).toEqual({
+          low: '16MB',
+          normal: '128MB',
+        });
+      } finally {
+        await small.close();
+      }
+    },
+  );
 });

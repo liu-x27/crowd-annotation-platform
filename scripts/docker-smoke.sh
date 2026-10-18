@@ -2,7 +2,8 @@
 # Smoke-test a container image: it runs as a non-root user, declares /data as a volume and
 # a health check, turns healthy, serves the web app and the API, and keeps its data in the
 # volume across a restart. With --demo, an image built with DEMO_MODE=true: a demo instance
-# starts from the demo database it carries, trains a model, and does it within 512 MB.
+# starts from the demo database it carries, trains a model, and with LOW_MEMORY=true does it
+# within 512 MB.
 #
 #   scripts/docker-smoke.sh <image>
 #   scripts/docker-smoke.sh --demo <image>
@@ -62,11 +63,12 @@ report "$($demo && echo Demo image || echo Image) size" "$(docker image inspect 
 peak() { docker exec "$name" cat /sys/fs/cgroup/memory.peak | awk '{printf "%.0f MiB", $1 / 1048576}'; }
 
 if $demo; then
-  # Once without a limit, to see what it needs; then within 512 MB and no swap, as on
-  # Render's free plan, where going over restarts the instance.
+  # Once as it comes, without a limit, to see what it needs; then the way render.yaml runs
+  # it, with LOW_MEMORY=true, within 512 MB and no swap, as on Render's free plan, where
+  # going over restarts the instance.
   for limit in none 512m; do
     flags=()
-    [ "$limit" = none ] || flags=(--memory "$limit" --memory-swap "$limit")
+    [ "$limit" = none ] || flags=(--memory "$limit" --memory-swap "$limit" -e LOW_MEMORY=true)
     docker run -d --name "$name" -p "$port:4000" -e DEMO_MODE=true ${flags[@]+"${flags[@]}"}       "$image" >/dev/null
     healthy
     node "$smoke" "http://127.0.0.1:$port" --demo
@@ -74,7 +76,7 @@ if $demo; then
     echo "$logs" | grep '^Demo:'
     state=$(docker inspect --format 'running={{.State.Running}} oom-killed={{.State.OOMKilled}} restarts={{.RestartCount}}' "$name")
     [ "$state" = "running=true oom-killed=false restarts=0" ] || { echo "not ok - $state"; exit 1; }
-    report "Demo memory (limit $limit)" "now $(docker stats --no-stream --format '{{.MemUsage}}' "$name"), peak $(peak)"
+    report "Demo memory ($([ "$limit" = none ] && echo 'no limit' || echo "LOW_MEMORY and a $limit limit"))" "now $(docker stats --no-stream --format '{{.MemUsage}}' "$name"), peak $(peak)"
     docker rm -f "$name" >/dev/null
   done
   exit 0
