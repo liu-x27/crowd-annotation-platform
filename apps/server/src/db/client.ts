@@ -39,7 +39,11 @@ export async function openDatabase(
     const { Pool } = await import('pg');
     const { drizzle } = await import('drizzle-orm/node-postgres');
     const { migrate } = await import('drizzle-orm/node-postgres/migrator');
-    const pool = new Pool({ connectionString: config.databaseUrl, max: 10 });
+    // No JIT on the app's connections. Postgres compiles a query's expressions once its
+    // estimated cost passes jit_above_cost, and for queries over a few thousand rows the
+    // compiling takes longer than the running: under the k6 load test, the count of what is
+    // left spent 45 of its 86 ms compiling. An `options` parameter in DATABASE_URL replaces this.
+    const pool = new Pool({ connectionString: config.databaseUrl, max: 10, options: '-c jit=off' });
     const db = drizzle(pool, { schema, casing: 'snake_case' });
     await migrate(db, { migrationsFolder: folder });
     return { db: db as unknown as Db, kind: 'postgres', close: () => pool.end() };

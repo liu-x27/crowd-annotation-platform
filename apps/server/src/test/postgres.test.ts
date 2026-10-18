@@ -6,10 +6,11 @@ import { rows } from '../db/client';
 import { type Client, type Harness, harness } from './harness';
 
 /**
- * What only exists with more than one connection. On PGlite every query runs on one
- * connection, so these are skipped there; CI runs them against a Postgres server
- * (TEST_DATABASE_URL), where requests the app handles at once hold separate pool
- * connections, and the raw connections below can hold a transaction open in between.
+ * What only exists with more than one connection, and one setting PGlite does not have. On
+ * PGlite every query runs on one connection, so these are skipped there; CI runs them
+ * against a Postgres server (TEST_DATABASE_URL), where requests the app handles at once hold
+ * separate pool connections, and the raw connections below can hold a transaction open in
+ * between.
  */
 describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
   let h: Harness;
@@ -111,6 +112,12 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
     );
     return c;
   }
+
+  it('runs the app’s queries without JIT', async () => {
+    // openDatabase turns it off: compiling took longer than the queue's queries ran.
+    const [row] = await rows<{ jit: string }>(h.deps.db, sql`show jit`);
+    expect(row!.jit).toBe('off');
+  });
 
   describe('claims', () => {
     it.each([1, 2])(
