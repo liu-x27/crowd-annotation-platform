@@ -61,3 +61,57 @@ jobs:
       - run: npm test -w @crowd/server
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+  load:
+    name: Load test (k6, claim → submit on Postgres 18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Start the server
+        run: |
+          nohup node apps/server/dist/index.js > server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:4000/api/health && exit 0
+            sleep 1
+          done
+          cat server.log
+          exit 1
+        env:
+          NODE_ENV: production
+          # Plain http on localhost: k6 would not send a Secure cookie back.
+          COOKIE_SECURE: 'false'
+      - uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: '2.3.0'
+      # 2 × 12 annotators, each looping claim → submit until nothing is left for them, on
+      # 4,000 items with redundancy 1 and 4,000 with redundancy 2.
+      - name: Run k6
+        id: k6
+        run: k6 run load/claim-submit.js
+        env:
+          VUS: 12
+          ITEMS: 4000
+      - name: Check every item was answered exactly as often as its redundancy asks
+        if: ${{ !cancelled() && steps.k6.outcome != 'skipped' }}
+        run: node load/check.mjs k6-summary.json
+      - name: Server log
+        if: failure()
+        run: tail -n 100 server.log
