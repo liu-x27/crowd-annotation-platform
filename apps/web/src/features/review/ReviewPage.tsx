@@ -180,7 +180,13 @@ export function ReviewPage() {
                       selected?.item.id === e.item.id ? 'bg-accent-soft' : 'hover:bg-surface-2',
                     )}
                   >
-                    <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                    <div
+                      className={cn(
+                        'flex items-center gap-1.5 text-[11px]',
+                        // The tinted selection is darker than the card: keep the small print legible.
+                        selected?.item.id === e.item.id ? 'text-ink-2' : 'text-ink-3',
+                      )}
+                    >
                       <span className="tabular">#{e.item.seq}</span>
                       {e.disagreement && (
                         <Badge tone="warning">{t('review.disagreementBadge')}</Badge>

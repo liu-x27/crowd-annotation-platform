@@ -150,7 +150,13 @@ function RunRow({ m, active, onSelect }: { m: ModelSummary; active: boolean; onS
             {score != null ? fmt.percent(score) : ''}
           </span>
         </div>
-        <div className="mt-0.5 flex items-center justify-between text-[11px] text-ink-3">
+        <div
+          className={cn(
+            'mt-0.5 flex items-center justify-between text-[11px]',
+            // The tinted selection is darker than the card: keep the small print legible.
+            active ? 'text-ink-2' : 'text-ink-3',
+          )}
+        >
           <span>
             {m.params.epochs} {t('models.epochs').toLowerCase()} ·{' '}
             {t('models.hashing', { n: m.params.hashBits })}

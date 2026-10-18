@@ -17,7 +17,7 @@
   --surface-3: #e8e8e3;
   --ink: #17171a;
   --ink-2: #4d4d55;
-  --ink-3: #85858e;
+  --ink-3: #6e6e77;
   --line: #e3e3de;
   --line-2: #d2d2cb;
   --accent: #4c52d6;
@@ -25,9 +25,10 @@
   --accent-soft: color-mix(in oklab, var(--accent) 11%, transparent);
   --on-accent: #ffffff;
   --marker: #fcd34d;
-  --success: #16a34a;
-  --warning: #c77c0c;
+  --success: #11793a;
+  --warning: #8f5407;
   --danger: #d33a2c;
+  --on-danger: #ffffff;
   --shadow: 0 1px 2px rgb(20 20 25 / 0.05), 0 2px 8px rgb(20 20 25 / 0.04);
   --shadow-lg: 0 12px 40px rgb(20 20 25 / 0.14), 0 2px 8px rgb(20 20 25 / 0.06);
 
@@ -58,7 +59,7 @@
   --surface-3: #26262b;
   --ink: #f2f2f3;
   --ink-2: #a5a5ae;
-  --ink-3: #72727b;
+  --ink-3: #88888f;
   --line: #29292e;
   --line-2: #38383f;
   --accent: #8d93ff;
@@ -69,6 +70,7 @@
   --success: #3fbf6f;
   --warning: #e0a03a;
   --danger: #f06a5e;
+  --on-danger: #0e0e10;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.55);
 
@@ -115,6 +117,7 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
 
   --shadow-card: var(--shadow);
   --shadow-float: var(--shadow-lg);

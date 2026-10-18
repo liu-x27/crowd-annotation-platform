@@ -306,6 +306,7 @@ export function AppShell() {
           <Tooltip content={t('nav.toggleTheme')}>
             <button
               type="button"
+              aria-label={t('nav.toggleTheme')}
               onClick={() =>
                 setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light')
               }

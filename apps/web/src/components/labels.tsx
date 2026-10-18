@@ -43,7 +43,7 @@ export function LabelChip({
       className={cn(
         'chip inline-flex max-w-full items-center gap-1.5 rounded-md font-medium',
         size === 'sm' ? 'h-5 px-1.5 text-[11px]' : 'h-6 px-2 text-xs',
-        strike && 'line-through opacity-60',
+        strike && 'line-through opacity-75',
         className,
       )}
       style={{ '--c': color } as CSSProperties}

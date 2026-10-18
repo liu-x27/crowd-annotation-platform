@@ -7,10 +7,12 @@ import {
   ToggleGroup,
 } from 'radix-ui';
 import {
+  createContext,
   forwardRef,
   type InputHTMLAttributes,
   type ReactNode,
   type TextareaHTMLAttributes,
+  useContext,
   useId,
 } from 'react';
 import { cn } from '../../lib/utils';
@@ -18,9 +20,26 @@ import { cn } from '../../lib/utils';
 const control =
   'w-full rounded-lg border border-line bg-surface pr-3 pl-3 text-sm text-ink placeholder:text-ink-3 shadow-card transition-colors hover:border-line-2 focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent/15 disabled:opacity-60';
 
+/**
+ * A Field's label and hint, for the controls inside it. Each control names itself after the
+ * label (aria-labelledby) and points at the hint (aria-describedby) unless it is given its own,
+ * so that a field reads the same to a screen reader as it looks.
+ */
+const FieldContext = createContext<{ labelId?: string; hintId?: string }>({});
+
+function useFieldAria(own: { 'aria-label'?: string; 'aria-labelledby'?: string }) {
+  const { labelId, hintId } = useContext(FieldContext);
+  const named = own['aria-label'] != null || own['aria-labelledby'] != null;
+  return {
+    'aria-labelledby': named ? own['aria-labelledby'] : labelId,
+    'aria-describedby': hintId,
+  };
+}
+
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...rest }, ref) {
-    return <input ref={ref} className={cn(control, 'h-9', className)} {...rest} />;
+    const aria = useFieldAria(rest);
+    return <input ref={ref} className={cn(control, 'h-9', className)} {...aria} {...rest} />;
   },
 );
 
@@ -28,10 +47,12 @@ export const Textarea = forwardRef<
   HTMLTextAreaElement,
   TextareaHTMLAttributes<HTMLTextAreaElement>
 >(function Textarea({ className, ...rest }, ref) {
+  const aria = useFieldAria(rest);
   return (
     <textarea
       ref={ref}
       className={cn(control, 'min-h-20 py-2 leading-relaxed', className)}
+      {...aria}
       {...rest}
     />
   );
@@ -54,25 +75,34 @@ export function Field({
   htmlFor?: string;
   aside?: ReactNode;
 }) {
+  const id = useId();
+  const labelId = label ? `${id}-label` : undefined;
+  const hintId = error || hint ? `${id}-hint` : undefined;
   return (
-    <div className={cn('flex flex-col gap-1.5', className)}>
-      {(label || aside) && (
-        <div className="flex items-baseline justify-between gap-2">
-          {label && (
-            <label htmlFor={htmlFor} className="text-[13px] font-medium text-ink">
-              {label}
-            </label>
-          )}
-          {aside}
-        </div>
-      )}
-      {children}
-      {error ? (
-        <p className="text-xs text-danger">{error}</p>
-      ) : hint ? (
-        <p className="text-xs leading-relaxed text-ink-3">{hint}</p>
-      ) : null}
-    </div>
+    <FieldContext.Provider value={{ labelId, hintId }}>
+      <div className={cn('flex flex-col gap-1.5', className)}>
+        {(label || aside) && (
+          <div className="flex items-baseline justify-between gap-2">
+            {label && (
+              <label id={labelId} htmlFor={htmlFor} className="text-[13px] font-medium text-ink">
+                {label}
+              </label>
+            )}
+            {aside}
+          </div>
+        )}
+        {children}
+        {error ? (
+          <p id={hintId} className="text-xs text-danger">
+            {error}
+          </p>
+        ) : hint ? (
+          <p id={hintId} className="text-xs leading-relaxed text-ink-3">
+            {hint}
+          </p>
+        ) : null}
+      </div>
+    </FieldContext.Provider>
   );
 }
 
@@ -82,18 +112,22 @@ export function Switch({
   label,
   hint,
   disabled,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange(v: boolean): void;
   label?: ReactNode;
   hint?: ReactNode;
   disabled?: boolean;
+  /** The switch's name when it has no visible label. */
+  ariaLabel?: string;
 }) {
   const id = useId();
   return (
     <div className="flex items-start gap-3">
       <RSwitch.Root
         id={id}
+        aria-label={label ? undefined : ariaLabel}
         checked={checked}
         onCheckedChange={onChange}
         disabled={disabled}
@@ -159,6 +193,7 @@ export function Select<T extends string>({
   className,
   size = 'md',
   id,
+  ariaLabel,
 }: {
   value: T | undefined;
   onChange(v: NoInfer<T>): void;
@@ -167,11 +202,16 @@ export function Select<T extends string>({
   className?: string;
   size?: 'sm' | 'md';
   id?: string;
+  /** The select's name when it is not inside a labelled Field. */
+  ariaLabel?: string;
 }) {
+  const aria = useFieldAria({ 'aria-label': ariaLabel });
   return (
     <RSelect.Root value={value} onValueChange={(v) => onChange(v as T)}>
       <RSelect.Trigger
         id={id}
+        aria-label={ariaLabel}
+        {...aria}
         className={cn(
           control,
           'inline-flex items-center justify-between gap-2 text-left data-[placeholder]:text-ink-3',
@@ -270,6 +310,7 @@ export function Slider({
   step: number;
   className?: string;
 }) {
+  const aria = useFieldAria({});
   return (
     <RSlider.Root
       value={[value]}
@@ -282,7 +323,10 @@ export function Slider({
       <RSlider.Track className="relative h-1.5 grow rounded-full bg-surface-3">
         <RSlider.Range className="absolute h-full rounded-full bg-accent" />
       </RSlider.Track>
-      <RSlider.Thumb className="block size-4 rounded-full border-2 border-accent bg-surface shadow focus:outline-none focus-visible:ring-3 focus-visible:ring-accent/25" />
+      <RSlider.Thumb
+        {...aria}
+        className="block size-4 rounded-full border-2 border-accent bg-surface shadow focus:outline-none focus-visible:ring-3 focus-visible:ring-accent/25"
+      />
     </RSlider.Root>
   );
 }

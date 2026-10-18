@@ -172,6 +172,7 @@ export function SettingsPage() {
           {guideTab === 'write' ? (
             <Textarea
               rows={12}
+              aria-label={t('settings.guidelines')}
               value={guidelines}
               onChange={(e) => setGuidelines(e.target.value)}
               className="font-mono text-[12.5px]"

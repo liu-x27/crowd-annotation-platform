@@ -8,7 +8,7 @@ const variants = {
   secondary:
     'bg-surface text-ink border border-line hover:bg-surface-2 hover:border-line-2 shadow-card',
   ghost: 'text-ink-2 hover:text-ink hover:bg-surface-2',
-  danger: 'bg-danger text-white hover:bg-danger/90 shadow-card',
+  danger: 'bg-danger text-on-danger hover:bg-danger/90 shadow-card',
   'danger-ghost': 'text-danger hover:bg-danger/10',
 } as const;
 

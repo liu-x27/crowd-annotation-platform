@@ -103,6 +103,7 @@ export function DataPage() {
         <Select
           size="sm"
           className="w-40"
+          ariaLabel={t('data.label')}
           value={q.label ?? 'all'}
           onChange={(v) => set({ label: v })}
           options={labelOptions}
@@ -110,6 +111,7 @@ export function DataPage() {
         <Select
           size="sm"
           className="w-36"
+          ariaLabel={t('data.columns.draft')}
           value={q.llm ?? 'any'}
           onChange={(v) => set({ llm: v })}
           options={draftOptions}

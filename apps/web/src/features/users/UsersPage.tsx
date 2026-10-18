@@ -92,6 +92,7 @@ export function UsersPage() {
                       <Select<Role>
                         size="sm"
                         className="w-36"
+                        ariaLabel={`${t('users.role')}: ${u.displayName ?? u.username}`}
                         value={u.role}
                         onChange={(role) => update.mutate({ id: u.id, patch: { role } })}
                         options={roleOptions}
@@ -100,6 +101,7 @@ export function UsersPage() {
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <Switch
+                          ariaLabel={`${t('users.active')}: ${u.displayName ?? u.username}`}
                           checked={!u.disabled}
                           onChange={(v) => update.mutate({ id: u.id, patch: { disabled: !v } })}
                           disabled={u.id === me?.id}
