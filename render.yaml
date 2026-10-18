@@ -1,0 +1,19 @@
+# A public demo on Render's free plan: the container image, the embedded database, demo mode.
+# In the Render dashboard: New → Blueprint, then pick this repository. See docs/DEPLOY.md.
+services:
+  - type: web
+    name: crowd-annotation-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    # Deploy a commit only after its CI checks have passed.
+    autoDeployTrigger: checksPass
+    envVars:
+      # The sign-in page lists every account and enters any of them without a password.
+      # Render also passes it to the image build, which then seeds the demo database the
+      # instance starts from (the free plan's disk is wiped whenever the instance stops).
+      - key: DEMO_MODE
+        value: 'true'
+      - key: ALLOW_REGISTRATION
+        value: 'false'
