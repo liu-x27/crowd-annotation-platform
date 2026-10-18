@@ -86,9 +86,31 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Per-statement timings and plans for load/profile.mjs. A service container takes no
+      # server options, so set them and restart it. auto_explain instruments 2% of
+      # statements and logs the plan of those that take 50 ms or more.
+      - name: Turn on pg_stat_statements and auto_explain
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          echo "PG_CONTAINER=$PG_CONTAINER" >> "$GITHUB_ENV"
+          pg() { docker exec "$PG_CONTAINER" "$@"; }
+          pg psql -U postgres \
+            -c "alter system set shared_preload_libraries = 'pg_stat_statements', 'auto_explain'" \
+            -c "alter system set pg_stat_statements.track_planning = on"
+          docker restart "$PG_CONTAINER"
+          for _ in $(seq 1 30); do pg pg_isready -U postgres && break; sleep 1; done
+          pg pg_isready -U postgres || { docker logs --tail 30 "$PG_CONTAINER"; exit 1; }
+          pg psql -U postgres -c "create extension pg_stat_statements" \
+            -c "alter system set auto_explain.log_min_duration = '50ms'" \
+            -c "alter system set auto_explain.log_analyze = on" \
+            -c "alter system set auto_explain.sample_rate = 0.02" \
+            -c "select pg_reload_conf()"
       - name: Start the server
         run: |
-          nohup node apps/server/dist/index.js > server.log 2>&1 &
+          # The probe times waits on the pg pool from outside the app; see load/pool-probe.mjs.
+          nohup node --import ./load/pool-probe.mjs apps/server/dist/index.js > server.log 2>&1 &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           for _ in $(seq 1 60); do
             curl -fsS http://127.0.0.1:4000/api/health && exit 0
             sleep 1
@@ -106,10 +128,15 @@ jobs:
       # 4,000 items with redundancy 1 and 4,000 with redundancy 2.
       - name: Run k6
         id: k6
-        run: k6 run load/claim-submit.js
+        run: |
+          node load/profile.mjs start
+          k6 run load/claim-submit.js
         env:
           VUS: 12
           ITEMS: 4000
+      - name: Where the time went
+        if: ${{ !cancelled() && steps.k6.outcome != 'skipped' }}
+        run: node load/profile.mjs report k6-summary.json
       - name: Check every item was answered exactly as often as its redundancy asks
         if: ${{ !cancelled() && steps.k6.outcome != 'skipped' }}
         run: node load/check.mjs k6-summary.json
