@@ -24,6 +24,7 @@ import { rows } from '../db/client';
 import { annotations, type ProjectRow, projects, type UserRow, users } from '../db/schema';
 import { createUser } from '../modules/accounts/service';
 import { claimNext, submitAnnotation } from '../modules/annotate/queue';
+import { drawCalibration } from '../modules/calibration/service';
 import { importBatch } from '../modules/items/service';
 import { normalized } from '../modules/projects/access';
 import { createProject } from '../modules/projects/service';
@@ -319,7 +320,8 @@ async function main() {
     );
   console.log(`  review: ${queue.total} in queue, ${reviewed} finalised, 1 returned`);
 
-  // 2 ── Reviews: redundancy 1, draft preselected.
+  // 2 ── Reviews: redundancy 1, draft preselected, and a calibration set of 40: served
+  // first, blind, to all three annotators, so its reports have something to say.
   console.log('Project 2: reviews');
   const revs = reviews(180, r);
   let p2 = await createProject(
@@ -342,6 +344,8 @@ async function main() {
     unknownLabels: 'error',
     finalizeImported: false,
   });
+  const { drawn } = await drawCalibration(db, p2, 40);
+  console.log(`  calibration set: ${drawn} items`);
   if (model) await draftAll(p2, admin);
   await simulateClassification(
     p2,
