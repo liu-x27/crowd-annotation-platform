@@ -365,7 +365,7 @@
       </div>
       <ul class="badges" aria-label="Built with">
         <li>Hono · Drizzle</li><li>Postgres · PGlite</li><li>React 19 · Tailwind 4</li>
-        <li>Ollama · Claude · OpenAI-compatible</li><li>FOR UPDATE SKIP LOCKED</li><li>English · 中文</li><li>118 tests · CI</li>
+        <li>Ollama · Claude · OpenAI-compatible</li><li>FOR UPDATE SKIP LOCKED</li><li>English · 中文</li><li>132 tests · CI</li>
       </ul>
 
       <div>
@@ -544,9 +544,12 @@
         <div class="card"><span class="tag">annotate</span><h3>Keyboard first</h3><p>Classification and span-level NER. Number keys for labels, <code>S</code> to skip, <code>F</code> to flag. Answers can change until the item is final.</p></div>
         <div class="card"><span class="tag">review</span><h3>Disagreement first</h3><p>Finalise with any label, accept the majority, finalise every unanimous item at once, or return one answer to its author with a note; it comes back to them first.</p></div>
         <div class="card"><span class="tag">agreement</span><h3>Measured, per source</h3><p>Krippendorff’s α and pairwise Cohen’s κ for classification, pairwise span F1 for NER, each annotator against the final labels and against the drafts.</p></div>
+        <div class="card"><span class="tag">calibration</span><h3>A blind reference</h3><p>Items drawn by hash, served first, never with the draft, to at least three people. They give the draft’s accuracy with an interval, the alternative annotator test, and each label’s share by PPI++.</p></div>
         <div class="card"><span class="tag">llm</span><h3>Drafting</h3><p>Ollama with grammar-constrained JSON, Claude through the official SDK, or any OpenAI-compatible server. A prompt preview runs a few items and saves nothing; an error that would repeat stops the job at the first one.</p></div>
         <div class="card"><span class="tag">train</span><h3>A student model</h3><p>TF-IDF and logistic regression, or an averaged perceptron with constrained Viterbi for NER. The test set is drawn first, so a draft never trains a model scored on the same item.</p></div>
         <div class="card"><span class="tag">data</span><h3>In and out</h3><p>Import CSV, TSV, JSON or JSONL with de-duplication. Every record of an item is one click away, raw model output included. Export JSONL, CSV or CoNLL.</p></div>
+        <div class="card"><span class="tag">deploy</span><h3>One container</h3><p>Non-root, data in a <code>/data</code> volume, a health check. Published to GHCR with a build provenance attestation; with <code>LOW_MEMORY</code> its demo runs in 512 MB.</p></div>
+        <div class="card"><span class="tag">ui</span><h3>The rest</h3><p>Roles built from capabilities, live job progress over server-sent events, a command palette, English and Chinese, light and dark.</p></div>
       </div>
     </section>
 
@@ -602,12 +605,14 @@
         <div>
           <h3 class="col">Tested</h3>
           <ul class="checks yes">
-            <li><b>118 tests</b>, server ones against a fresh in-memory Postgres per file, and in CI on Postgres 18 as well: two annotators asking at once never get the same item; a failed model call is never a label; no test item ever contributes a training label.</li>
+            <li><b>132 tests</b>, server ones against a fresh in-memory Postgres per file, and in CI on Postgres 18 as well: two annotators asking at once never get the same item; a failed model call is never a label; no test item ever contributes a training label.</li>
             <li><b>Claims under load</b>, in CI: 24 annotators loop claim → submit through 8,000 items on Postgres 18, then every item is checked for exactly the answers its redundancy asks for. The first run found items handed out once too often with no request failing; claims now check the item again once it is locked.</li>
             <li><b>The container image</b>, in CI: smoke-tested, published to GHCR with a build provenance attestation, and its demo variant run within 512 MB.</li>
             <li><b>The v1 migration</b> on the real v1 database: 94,469 items and 135,835 annotations in 44 s, every annotation accounted for.</li>
             <li><b>Its largest project</b>, 47,345 items: the item list, search, statistics, and a streaming JSONL export of 47,247 rows, 6.6 MB, in under 0.6 s.</li>
             <li><b>A demo instance</b> seeded end to end with <code>qwen3:4b</code>, and the UI in Edge, in both languages and both themes.</li>
+            <li><b>An accessibility scan</b> of 14 pages in both themes with axe’s WCAG A and AA rules: 62 violations at first, from low-contrast muted text to form controls without names, all fixed. A scan, not an audit.</li>
+            <li><b>The calibration statistics</b> against scipy, statsmodels and ppi_py, and the alternative annotator test against the 30 results its authors publish for their data.</li>
           </ul>
         </div>
         <div>
@@ -634,7 +639,7 @@
 <span class="p"># one process serving both</span>
 <span class="p">$</span> npm run build &amp;&amp; npm start   <span class="p"># :4000</span>
 
-<span class="p">$</span> npm test              <span class="p"># 109 tests; 9 more on Postgres</span></pre>
+<span class="p">$</span> npm test              <span class="p"># 123 tests; 9 more on Postgres</span></pre>
         <div class="prose">
           <p><strong>Requirements.</strong> Node 22.12 or later. The database is an embedded Postgres (PGlite) in <code>./data</code>; set <code>DATABASE_URL</code> to use a server instead.</p>
           <p><strong>First run.</strong> On an empty database the first page asks for an admin account, and disappears once one exists.</p>

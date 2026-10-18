@@ -17,7 +17,7 @@ human labels, and every number reported against the source it came from.
 ![Postgres](https://img.shields.io/badge/Postgres-embedded_PGlite_or_a_server-17171a?style=flat-square&logo=postgresql&logoColor=white)
 ![React 19](https://img.shields.io/badge/React_19-Tailwind_4-17171a?style=flat-square&logo=react&logoColor=white)
 ![LLM drafts](https://img.shields.io/badge/drafts-Ollama_·_Claude_·_OpenAI--compatible-fcd34d?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-118-17171a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-132-17171a?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-17171a?style=flat-square)](LICENSE)
 
 **[Project page](https://liu-x27.github.io/crowd-annotation-platform/)** · [Why a rewrite](#why-a-rewrite) · [What it does](#what-it-does) · [Running it](#running-it) · [Status](#status) · [Architecture](docs/ARCHITECTURE.md)
@@ -111,6 +111,16 @@ nothing merges them silently.
   author with a note (it comes back to them first).
 - **Agreement.** Krippendorff's α and pairwise Cohen's κ for classification, pairwise span
   F1 for NER, per-annotator agreement with the final labels and with the drafts.
+- **Calibration.** A project can draw a calibration set: items picked at random by a hash
+  of their ids, served before all others, never with the draft on screen, and answered by
+  at least three people whatever the redundancy. Its blind answers are the reference for
+  three reports: how often the draft matches the most common answer, with a Wilson
+  interval; the alternative annotator test (Calderon, Reichart & Dror, ACL 2025), which
+  asks whether the drafts could stand in for these annotators; and each label's share of
+  the project from prediction-powered inference (PPI++), which leans on the drafts only as
+  far as they agree with people. In plain TypeScript, checked against scipy, statsmodels
+  and ppi_py. In the demo, the product-review project has a set of 40; its drafts come from
+  a mock model and are near chance, so they fail the test and PPI++ all but ignores them.
 - **LLM drafting.** Ollama (grammar-constrained JSON), Claude (official SDK, structured
   output) or any OpenAI-compatible server. A prompt preview shows the full exchange on a
   few items without saving anything; worked examples never include the item being
@@ -162,6 +172,7 @@ The ones that matter most:
 | `DATABASE_URL` | use a Postgres server instead of the embedded one |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | local drafting |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | drafting with Claude (default model `claude-opus-5`) |
+| `ANTHROPIC_BASE_URL` | an Anthropic-compatible endpoint instead of Anthropic's API |
 | `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` | any OpenAI-compatible server |
 | `ALLOW_REGISTRATION` | whether people can create annotator accounts themselves |
 | `DEMO_MODE` | one-click sign-in as any account — for public demos only |
@@ -199,7 +210,8 @@ demo on Render's free plan ([render.yaml](render.yaml)).
 apps/server       Hono API · Drizzle schema and migrations · job runner · LLM providers
                   · training worker · v1 migration · demo seed
 apps/web          React 19 · TanStack Query · Tailwind 4 · Radix · hand-drawn SVG charts
-packages/shared   zod schemas and API types used by both, code-point span utilities
+packages/shared   zod schemas and API types used by both, code-point span utilities,
+                  the statistics behind calibration
 docs/             ARCHITECTURE.md · MIGRATING_FROM_V1.md · DEPLOY.md · screenshots
 load/             k6 load test of claim → submit, and the check of the database after it
 scripts/          smoke tests of a running instance and of the container image
@@ -211,17 +223,17 @@ job runner, the drafting pipeline and why each piece is the way it is.
 ## Tests
 
 ```bash
-npm test           # 109 tests: shared 21, server 83, web 5
+npm test           # 123 tests: shared 29, server 89, web 5
 npm run typecheck
 npm run lint
+npm run a11y       # axe on 14 pages in both themes, against a running demo instance
 TEST_DATABASE_URL=postgres://user:password@localhost:5432/postgres npm test -w @crowd/server
 ```
 
 Server tests run against a fresh in-memory Postgres per file and call the app without
 opening a port. With `TEST_DATABASE_URL` (a role that may create databases) they run on
 that Postgres server instead, each file on its own copy of a template database migrated
-once per run, together with nine
-tests that need connections running in parallel (`postgres.test.ts`); CI does both, on
+once per run, together with nine tests that need connections running in parallel (`postgres.test.ts`); CI does both, on
 Postgres 18. Among what they pin down: two annotators asking at the same moment never
 get the same item, and redundancy 2 never reaches a third person, also when a claim
 commits while another claim's scan is on its way to the same item; an expired lease frees
@@ -240,7 +252,12 @@ Tested here: the suite above; the v1 migration on the real v1 database (94,469 i
 135,835 annotations in 44 s, every annotation accounted for); the item list, text search,
 statistics and a streaming JSONL export (47,247 rows, 6.6 MB, under 0.6 s) on its largest
 project, 47,345 items; a demo instance seeded end to end with qwen3:4b; the UI in Edge,
-in both languages and both themes.
+in both languages and both themes; the alternative annotator test on the authors' own
+data, which gives the winning rate and advantage probability their notebook prints in all
+30 cases; and an axe scan of 14 pages in both themes (`npm run a11y`, WCAG 2.0–2.2 A and
+AA rules), whose first run found 62 violations, all since fixed: muted text below 4.5:1
+contrast, an unnamed button in the header, and form controls whose label was not tied to
+them.
 
 Tested in [CI](.github/workflows/ci.yml), for every push to `main` and every pull request:
 
@@ -276,8 +293,9 @@ Not tested:
 - **A hosted deployment.** [render.yaml](render.yaml) and [docs/DEPLOY.md](docs/DEPLOY.md)
   describe a demo on Render's free plan, but no service has been created, so Render itself
   is unchecked.
-- **Accessibility** beyond keyboard use and screen-reader tables behind the charts has not
-  been audited.
+- **Accessibility** beyond keyboard use, the screen-reader tables behind the charts and
+  that scan has not been checked: no screen reader or other assistive technology has been
+  tried, and the scan sees each page as it loads, not dialogs, menus or later states.
 
 ## License
 
