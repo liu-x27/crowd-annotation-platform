@@ -71,7 +71,7 @@ then work a reviewer returned to them, then a fresh item. A fresh item is claime
 statements, in one transaction (calibration items first; see [Calibration](#calibration)):
 
 ```sql
-SELECT i.id FROM items i
+SELECT i.id, i.seq, i.text, i.meta FROM items i
 WHERE <eligible for this user>          -- not final, < redundancy answers or live claims,
 ORDER BY i.seq LIMIT 1                  -- not already touched by this user, inside their
 FOR UPDATE OF i SKIP LOCKED;            -- assignment ranges (or outside everyone's)
@@ -80,7 +80,7 @@ INSERT INTO annotations (…, status, lease_expires_at)
 SELECT …, 'claimed', now() + lease FROM items i
 WHERE i.id = <the item just locked> AND <eligible for this user>
 ON CONFLICT (item_id, user_id) WHERE source = 'human' DO NOTHING
-RETURNING id, item_id;
+RETURNING id, lease_expires_at, <whether the item has a draft>;
 ```
 
 `SKIP LOCKED` is what makes concurrent requests pick different items on real Postgres; on
@@ -95,7 +95,9 @@ so its snapshot includes every claim committed on the item; if the item is no lo
 eligible, the next one is tried. `postgres.test.ts` opens that window on a Postgres server
 and shows both behaviours. A per-(project, user) advisory lock stops two browser tabs from
 opening two claims. Leases expire on their own — there is no
-sweeper; the eligibility query simply ignores claims whose lease is in the past.
+sweeper; the eligibility query simply ignores claims whose lease is in the past. Between
+them, the two statements also return everything the response shows of a claim on an item
+without a draft; with a draft, the queue reads it and records whether it is shown.
 
 Resuming an open claim takes the same care. Once its lease has run out, it is renewed only
 while fewer than `redundancy` other people have answered the item or hold a live claim on

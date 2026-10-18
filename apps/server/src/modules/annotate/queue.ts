@@ -117,7 +117,11 @@ async function submittedCount(db: DbOrTx, projectId: number, userId: number): Pr
  * can later be split by it. Never on a calibration item: its answers are the blind
  * reference the drafts are measured against.
  */
-function draftDecision(project: ProjectRow, item: ItemRow, userId: number): boolean {
+function draftDecision(
+  project: ProjectRow,
+  item: Pick<ItemRow, 'id' | 'calibration'>,
+  userId: number,
+): boolean {
   const { draftMode, blindRate } = project.settings;
   if (draftMode === 'hidden' || item.calibration) return false;
   if (blindRate > 0 && unitHash(`blind:${project.id}:${item.id}:${userId}`) < blindRate)
@@ -140,22 +144,26 @@ async function draftFor(db: DbOrTx, itemId: number): Promise<AnnotationRow | und
   return draft;
 }
 
+type ClaimItem = Pick<ItemRow, 'id' | 'seq' | 'text' | 'meta' | 'calibration'>;
+
+function draftView(project: ProjectRow, item: ClaimItem, d: AnnotationRow): ClaimView['draft'] {
+  return {
+    label: d.label,
+    spans: project.type === 'ner' ? withText(item.text, d.spans ?? []) : null,
+    model: d.model,
+  };
+}
+
 async function claimView(
   db: DbOrTx,
   project: ProjectRow,
   ann: AnnotationRow,
-  item: ItemRow,
+  item: ClaimItem,
 ): Promise<ClaimView> {
   let draft: ClaimView['draft'] = null;
   if (ann.draftShown) {
     const d = await draftFor(db, item.id);
-    if (d) {
-      draft = {
-        label: d.label,
-        spans: project.type === 'ner' ? withText(item.text, d.spans ?? []) : null,
-        model: d.model,
-      };
-    }
+    if (d) draft = draftView(project, item, d);
   }
   let returned: ClaimView['returned'] = null;
   if (ann.status === 'claimed' && ann.reviewNote != null && ann.submittedAt != null) {
@@ -180,6 +188,24 @@ async function claimView(
       : null,
     returned,
     leaseExpiresAt: iso(ann.leaseExpiresAt)!,
+  };
+}
+
+/** `claimView` of a claim just inserted: no answer yet, and not returned work. */
+function freshClaimView(
+  project: ProjectRow,
+  annotationId: number,
+  item: ClaimItem,
+  shownDraft: AnnotationRow | null,
+  leaseExpiresAt: Date,
+): ClaimView {
+  return {
+    annotationId,
+    item: { id: item.id, seq: item.seq, text: item.text, meta: item.meta },
+    draft: shownDraft ? draftView(project, item, shownDraft) : null,
+    current: null,
+    returned: null,
+    leaseExpiresAt: iso(leaseExpiresAt)!,
   };
 }
 
@@ -210,26 +236,34 @@ export async function claimNext(
     // a fresh claim still being inserted (step 3 holds the item while it inserts) would be
     // missed, and an expired claim renewed beside it, over the item's redundancy; and a
     // reviewer finalising the item could drop this claim between the read and the renewal.
-    await tx.execute(sql`
-      select i.id from items i
-      join annotations a on a.item_id = i.id
-      where a.project_id = ${project.id} and a.user_id = ${user.id}
-        and a.source = 'human' and a.status = 'claimed'
-      order by i.id
-      for update of i`);
-    const open = await tx
-      .select({ a: annotations, i: items })
-      .from(annotations)
-      .innerJoin(items, eq(items.id, annotations.itemId))
-      .where(
-        and(
-          eq(annotations.projectId, project.id),
-          eq(annotations.userId, user.id),
-          eq(annotations.source, 'human'),
-          eq(annotations.status, 'claimed'),
-        ),
-      )
-      .orderBy(annotations.id);
+    const locked = await rows<{ id: number }>(
+      tx,
+      sql`
+        select i.id from items i
+        join annotations a on a.item_id = i.id
+        where a.project_id = ${project.id} and a.user_id = ${user.id}
+          and a.source = 'human' and a.status = 'claimed'
+        order by i.id
+        for update of i`,
+    );
+    // Nothing locked, nothing to resume, which is the usual case right after a submit.
+    // Taking a skipped item back is the one way a claim opens outside the advisory lock, and
+    // one that commits after the statement above would be missed by the read below too.
+    const open = locked.length
+      ? await tx
+          .select({ a: annotations, i: items })
+          .from(annotations)
+          .innerJoin(items, eq(items.id, annotations.itemId))
+          .where(
+            and(
+              eq(annotations.projectId, project.id),
+              eq(annotations.userId, user.id),
+              eq(annotations.source, 'human'),
+              eq(annotations.status, 'claimed'),
+            ),
+          )
+          .orderBy(annotations.id)
+      : [];
     for (const { a, i } of open) {
       const stale =
         i.finalizedAt != null ||
@@ -251,29 +285,26 @@ export async function claimNext(
       if (renewed) return claimView(tx, project, renewed, i);
     }
 
-    // 2. Returned work.
-    const [returned] = await tx
-      .select({ a: annotations, i: items })
-      .from(annotations)
-      .innerJoin(items, eq(items.id, annotations.itemId))
-      .where(
-        and(
-          eq(annotations.projectId, project.id),
-          eq(annotations.userId, user.id),
-          eq(annotations.source, 'human'),
-          eq(annotations.status, 'rejected'),
-          sql`${items.finalizedAt} is null`,
-        ),
-      )
-      .orderBy(annotations.reviewedAt)
-      .limit(1);
+    // 2. Returned work. Asked for by id: this runs before every fresh claim and nearly always
+    // finds nothing, and the whole rows are only needed when it finds something.
+    const [returned] = await rows<{ id: number }>(
+      tx,
+      sql`
+        select a.id from annotations a
+        join items i on i.id = a.item_id
+        where a.project_id = ${project.id} and a.user_id = ${user.id}
+          and a.source = 'human' and a.status = 'rejected' and i.finalized_at is null
+        order by a.reviewed_at
+        limit 1`,
+    );
     if (returned) {
       const [reopened] = await tx
         .update(annotations)
         .set({ status: 'claimed', leaseExpiresAt: leaseInterval(project), updatedAt: new Date() })
-        .where(eq(annotations.id, returned.a.id))
+        .where(eq(annotations.id, returned.id))
         .returning();
-      return claimView(tx, project, reopened!, returned.i);
+      const [item] = await tx.select().from(items).where(eq(items.id, reopened!.itemId));
+      return claimView(tx, project, reopened!, item!);
     }
 
     // 3. A fresh item, from the calibration set while it lasts so that its reference fills
@@ -285,9 +316,12 @@ export async function claimNext(
     // locks only if the row was updated, which a claim does not do. The second statement's
     // snapshot is taken once the lock is held, so it sees every claim committed on the item.
     // If the item has gone, try the next one.
+    //
+    // Between them, the two statements also return what the response shows: the first reads
+    // the item (locked from then on), the second the lease and whether the item has a draft.
+    // Without a draft, nothing more is asked of the database.
     const passedOver: number[] = [];
-    let hit: { id: number; item_id: number } | undefined;
-    while (!hit) {
+    for (;;) {
       const notPassedOver = passedOver.length
         ? sql`and i.id not in (${sql.join(
             passedOver.map((id) => sql`${id}`),
@@ -295,10 +329,10 @@ export async function claimNext(
           )})`
         : sql``;
       const first = (only: SQL) =>
-        rows<{ id: number }>(
+        rows<ClaimItem>(
           tx,
           sql`
-            select i.id from items i
+            select i.id, i.seq, i.text, i.meta, i.calibration from items i
             where ${eligible(project, user.id)} ${only} ${notPassedOver}
             order by i.seq
             limit 1
@@ -309,7 +343,7 @@ export async function claimNext(
       const fromSet = await first(sql`and i.calibration`);
       const [candidate] = fromSet.length ? fromSet : await first(sql``);
       if (!candidate) return null;
-      [hit] = await rows<{ id: number; item_id: number }>(
+      const [hit] = await rows<{ id: number; lease_expires_at: string; has_draft: boolean }>(
         tx,
         sql`
           insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
@@ -317,18 +351,26 @@ export async function claimNext(
           from items i
           where i.id = ${candidate.id} and ${eligible(project, user.id)}
           on conflict (item_id, user_id) where source = 'human' do nothing
-          returning id, item_id`,
+          returning id, lease_expires_at,
+            exists (select 1 from annotations d where d.item_id = ${candidate.id}
+                    and d.source = 'llm' and d.status = 'submitted') as has_draft`,
       );
-      passedOver.push(candidate.id);
+      if (!hit) {
+        passedOver.push(candidate.id);
+        continue;
+      }
+      let shownDraft: AnnotationRow | null = null;
+      const draft = hit.has_draft ? await draftFor(tx, candidate.id) : undefined;
+      if (draft) {
+        const shown = draftDecision(project, candidate, user.id);
+        await tx.update(annotations).set({ draftShown: shown }).where(eq(annotations.id, hit.id));
+        if (shown) shownDraft = draft;
+      }
+      // Raw rows: both drivers parse jsonb, and return timestamptz as text, which drizzle
+      // would map to a Date like this.
+      const lease = new Date(hit.lease_expires_at);
+      return freshClaimView(project, hit.id, candidate, shownDraft, lease);
     }
-    const [item] = await tx.select().from(items).where(eq(items.id, hit.item_id));
-    const draft = await draftFor(tx, hit.item_id);
-    const [ann] = await tx
-      .update(annotations)
-      .set({ draftShown: draft ? draftDecision(project, item!, user.id) : null })
-      .where(eq(annotations.id, hit.id))
-      .returning();
-    return claimView(tx, project, ann!, item!);
   });
 }
 
