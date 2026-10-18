@@ -151,7 +151,8 @@ const leaseInterval = (project: ProjectRow) =>
  * Serve the next item. In order of preference: the user's own open claim, work a reviewer
  * returned to them, then a fresh item. A fresh item is locked with `FOR UPDATE SKIP LOCKED`,
  * so two annotators asking at the same moment get different items, and checked again once
- * it is locked, so an item claimed meanwhile is not handed out a second time.
+ * it is locked, so an item claimed meanwhile is not handed out a second time. An open
+ * claim's item is locked before the claim is renewed, for the same reason.
  */
 export async function claimNext(
   db: Db,
@@ -163,7 +164,20 @@ export async function claimNext(
     // One claim decision at a time per (project, user): two tabs cannot open two claims.
     await tx.execute(sql`select pg_advisory_xact_lock(${project.id}::int, ${user.id}::int)`);
 
-    // 1. An open claim: resume it, unless the item has moved on without this user.
+    // 1. An open claim: resume it, unless the item has moved on without this user. Lock the
+    // items first, in id order as bulk review does, then read the claims and count who else
+    // holds each item in statements of their own: their snapshots are taken once the locks
+    // are held, so they include whatever was under way on the item. Read before the lock,
+    // a fresh claim still being inserted (step 3 holds the item while it inserts) would be
+    // missed, and an expired claim renewed beside it, over the item's redundancy; and a
+    // reviewer finalising the item could drop this claim between the read and the renewal.
+    await tx.execute(sql`
+      select i.id from items i
+      join annotations a on a.item_id = i.id
+      where a.project_id = ${project.id} and a.user_id = ${user.id}
+        and a.source = 'human' and a.status = 'claimed'
+      order by i.id
+      for update of i`);
     const open = await tx
       .select({ a: annotations, i: items })
       .from(annotations)
@@ -190,9 +204,11 @@ export async function claimNext(
       const [renewed] = await tx
         .update(annotations)
         .set({ leaseExpiresAt: leaseInterval(project), updatedAt: new Date() })
-        .where(eq(annotations.id, a.id))
+        .where(and(eq(annotations.id, a.id), eq(annotations.status, 'claimed')))
         .returning();
-      return claimView(tx, project, renewed!, i);
+      // No row only for a claim taken back from skipped after the lock above and let go
+      // again since: move on, as if it had been released.
+      if (renewed) return claimView(tx, project, renewed, i);
     }
 
     // 2. Returned work.

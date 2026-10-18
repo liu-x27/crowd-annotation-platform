@@ -97,6 +97,16 @@ and shows both behaviours. A per-(project, user) advisory lock stops two browser
 opening two claims. Leases expire on their own — there is no
 sweeper; the eligibility query simply ignores claims whose lease is in the past.
 
+Resuming an open claim takes the same care. Once its lease has run out, it is renewed only
+while fewer than `redundancy` other people have answered the item or hold a live claim on
+it, and that count would miss a claim on the item still being inserted. So the queue first
+locks the items of the caller's open claims (`SELECT … FOR UPDATE`, in id order, as bulk
+review does), and only then reads the claims and counts, in statements whose snapshots
+include every claim committed on those items meanwhile. The same lock orders the renewal
+after a reviewer finalising the item, which drops the claims left open on it: the claim is
+then gone, and the queue moves on. `postgres.test.ts` holds each of those transactions open
+while the owner asks.
+
 A submit updates the annotation, increments `items.human_count`, and — if the project
 allows it, enough people have answered, all answers agree and nobody flagged the item —
 finalises it as `consensus`, all in one transaction. The response carries the next claim,
