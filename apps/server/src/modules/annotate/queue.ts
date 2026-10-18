@@ -55,14 +55,49 @@ function eligible(project: ProjectRow, userId: number) {
            and (a.status = 'submitted' or (a.status = 'claimed' and a.lease_expires_at > now()))) < ${required}`;
 }
 
+/**
+ * How many items `eligible` admits for this user: the count of what is left that every
+ * queue response carries. `eligible` asks three indexed questions of each item it looks at:
+ * how many people hold it, whether this user has touched it, and whether it is in their
+ * ranges. A claim looks at a few items. This count looks at every open item in the project,
+ * and under load those lookups were most of Postgres's work. So it answers each question
+ * once for the whole project, as a set the scan of items only probes: the items that live
+ * claims fill up (submitted answers being `human_count`, kept in the same transaction as the
+ * answer), the items this user touched, and this user's ranges as one multirange. `NOT IN`
+ * hashes a set whatever the planner estimates, and there is no join for stale statistics to
+ * turn into a nested loop. A test checks the count against `eligible`'s definition.
+ */
 export async function availableCount(
   db: DbOrTx,
   project: ProjectRow,
   userId: number,
 ): Promise<number> {
+  const p = project.id;
+  const k = project.settings.redundancy;
+  const required = (alias: string) => requiredSql(alias, k);
+  const ranges = (where: SQL) =>
+    sql`(select range_agg(int4range(r.seq_from, r.seq_to, '[]')) filter (where r.seq_from <= r.seq_to)
+         from assignments r where ${where})`;
   const row = await one<{ n: number }>(
     db,
-    sql`select count(*)::int as n from items i where ${eligible(project, userId)}`,
+    sql`
+      select count(*)::int as n
+      from items i
+      where i.project_id = ${p}
+        and i.finalized_at is null
+        and i.human_count < ${required('i')}
+        and i.id not in (select c.item_id from annotations c join items j on j.id = c.item_id
+                         where c.project_id = ${p} and c.source = 'human' and c.status = 'claimed'
+                           and c.lease_expires_at > now()
+                         group by c.item_id, j.human_count, j.calibration
+                         having j.human_count + count(*) >= ${required('j')})
+        and i.id not in (select a.item_id from annotations a
+                         where a.project_id = ${p} and a.source = 'human' and a.user_id = ${userId})
+        and case
+          when exists (select 1 from assignments r where r.project_id = ${p} and r.user_id = ${userId})
+            then coalesce(i.seq <@ ${ranges(sql`r.project_id = ${p} and r.user_id = ${userId}`)}, false)
+          else not coalesce(i.seq <@ ${ranges(sql`r.project_id = ${p}`)}, false)
+        end`,
   );
   return row?.n ?? 0;
 }

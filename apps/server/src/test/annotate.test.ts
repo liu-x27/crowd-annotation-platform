@@ -2,7 +2,11 @@ import type { ClaimView, QueueView, ReviewQueue, SubmitResult } from '@crowd/sha
 import { labelsFromNames } from '@crowd/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { one } from '../db/client';
 import { annotations, items } from '../db/schema';
+import { availableCount } from '../modules/annotate/queue';
+import { normalized } from '../modules/projects/access';
+import { getProject } from '../modules/projects/service';
 import { type Harness, harness } from './harness';
 
 let h: Harness;
@@ -159,6 +163,129 @@ describe('assignment ranges', () => {
       ranges: [{ userId: ranged.me.id, seqFrom: 5, seqTo: 50 }],
     });
     expect(bad.status).toBe(400);
+  });
+});
+
+describe('what is left', () => {
+  it('counts what the queue would serve, whatever state the items are in', async () => {
+    const p = await h.project(
+      { name: 'left', settings: { redundancy: 2, autoFinalize: 'never' } },
+      texts(12),
+    );
+    const [a, b, c, d] = await Promise.all(
+      ['left-a', 'left-b', 'left-c', 'left-d'].map((name) => h.user(name)),
+    );
+    const ranged = await h.admin.put(`/api/projects/${p.id}/assignments`, {
+      ranges: [
+        { userId: d.me.id, seqFrom: 5, seqTo: 5 },
+        { userId: d.me.id, seqFrom: 10, seqTo: 12 },
+      ],
+    });
+    expect(ranged.status).toBe(200);
+    const project = normalized(await getProject(h.deps.db, p.id));
+
+    // The definition, as `eligible` writes it: each item's answers and live claims counted.
+    const byDefinition = async (userId: number) =>
+      (await one<{ n: number }>(
+        h.deps.db,
+        sql`select count(*)::int as n from items i
+            where i.project_id = ${p.id} and i.finalized_at is null
+              and (select count(*) from annotations a where a.item_id = i.id and a.source = 'human'
+                   and (a.status = 'submitted' or (a.status = 'claimed' and a.lease_expires_at > now()))) < 2
+              and not exists (select 1 from annotations a
+                              where a.item_id = i.id and a.source = 'human' and a.user_id = ${userId})
+              and (case
+                when exists (select 1 from assignments r where r.project_id = ${p.id} and r.user_id = ${userId})
+                  then exists (select 1 from assignments r where r.project_id = ${p.id} and r.user_id = ${userId}
+                               and i.seq between r.seq_from and r.seq_to)
+                else not exists (select 1 from assignments r where r.project_id = ${p.id}
+                                 and i.seq between r.seq_from and r.seq_to)
+              end)`,
+      ))!.n;
+    const left = async () =>
+      Promise.all([a, b, c, d].map((x) => availableCount(h.deps.db, project, x.me.id)));
+    const expectAgreement = async () =>
+      expect(await left()).toEqual(
+        await Promise.all([a, b, c, d].map((x) => byDefinition(x.me.id))),
+      );
+    const submit = (x: typeof a, claim: ClaimView) =>
+      x.post<SubmitResult>(`/api/projects/${p.id}/annotations/${claim.annotationId}/submit`, {
+        label: 'pos',
+      });
+
+    // d has items 5 and 10–12; everyone else the other eight.
+    expect(await left()).toEqual([8, 8, 8, 4]);
+
+    // a answers items 1 and 2 and holds 3; b answers 1, which is then full, and holds 2;
+    // c holds 3, which two live claims now fill.
+    const a1 = (await next(a, p.id)).claim!;
+    const a2 = (await submit(a, a1)).body.next.claim!;
+    await submit(a, a2);
+    const b1 = (await next(b, p.id)).claim!;
+    const b2 = (await submit(b, b1)).body.next.claim!;
+    const c3 = (await next(c, p.id)).claim!;
+    expect([a1, a2, b1, b2, c3].map((x) => x.item.seq)).toEqual([1, 2, 1, 2, 3]);
+    await expectAgreement();
+
+    // b's lease runs out: item 2 is open again, to everyone but a and b.
+    await h.deps.db
+      .update(annotations)
+      .set({ leaseExpiresAt: sql`now() - interval '1 minute'` })
+      .where(eq(annotations.id, b2.annotationId));
+    await expectAgreement();
+
+    // a's answer on item 1 is returned to a, so item 1 has one answer again.
+    await h.admin.post(`/api/projects/${p.id}/annotations/${a1.annotationId}/reject`, {
+      note: 'again',
+    });
+    await expectAgreement();
+
+    // Item 3 is finalised under the two claims on it. c is then served item 1 and skips it,
+    // and the skip's response claims item 2 for c.
+    await h.admin.post(`/api/projects/${p.id}/items/${c3.item.id}/finalize`, { label: 'neg' });
+    await expectAgreement();
+    const c1 = (await next(c, p.id)).claim!;
+    const skip = await c.post<QueueView>(
+      `/api/projects/${p.id}/annotations/${c1.annotationId}/skip`,
+      {},
+    );
+    expect([c1.item.seq, skip.body.claim!.item.seq]).toEqual([1, 2]);
+    await expectAgreement();
+    // Items 4 and 6–9 for each of a, b and c; items 1 and 2 for nobody.
+    expect(await left()).toEqual([5, 5, 5, 4]);
+  });
+
+  it('counts a calibration item as open until three people hold it', async () => {
+    const p = await h.project(
+      { name: 'left-calibration', settings: { redundancy: 1, autoFinalize: 'never' } },
+      texts(3),
+    );
+    await h.deps.db
+      .update(items)
+      .set({ calibration: true })
+      .where(and(eq(items.projectId, p.id), eq(items.seq, 2)));
+    const project = normalized(await getProject(h.deps.db, p.id));
+    const [a, b, c, d] = await Promise.all(
+      ['left-cal-a', 'left-cal-b', 'left-cal-c', 'left-cal-d'].map((name) => h.user(name)),
+    );
+    const left = async () =>
+      Promise.all([a, b, c, d].map((x) => availableCount(h.deps.db, project, x.me.id)));
+    expect(await left()).toEqual([3, 3, 3, 3]);
+
+    // a is served the calibration item first, answers it, and is then given item 1.
+    const a2 = (await next(a, p.id)).claim!;
+    const submitted = await a.post<SubmitResult>(
+      `/api/projects/${p.id}/annotations/${a2.annotationId}/submit`,
+      { label: 'pos' },
+    );
+    expect([a2.item.seq, submitted.body.next.claim!.item.seq]).toEqual([2, 1]);
+    // Item 2 has one answer of the three it needs; item 1 is full with a's claim.
+    expect(await left()).toEqual([1, 2, 2, 2]);
+
+    // b and c take item 2 as well, and with three people on it, nobody else can.
+    const [b2, c2] = [(await next(b, p.id)).claim!, (await next(c, p.id)).claim!];
+    expect([b2.item.seq, c2.item.seq]).toEqual([2, 2]);
+    expect(await left()).toEqual([1, 1, 1, 1]);
   });
 });
 

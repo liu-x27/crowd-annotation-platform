@@ -112,6 +112,19 @@ allows it, enough people have answered, all answers agree and nobody flagged the
 finalises it as `consensus`, all in one transaction. The response carries the next claim,
 so moving to the next item is one round trip.
 
+Every queue response also says how many items are left for this person: how many the
+claim's filter would admit. The claim's filter asks three indexed questions of each item it
+looks at (how many hold it, whether this person touched it, whether it is in their ranges),
+which is cheap for the few items a claim looks at. The count looks at every open item in the
+project, so it answers each question once, as a set that the scan of items only probes: the
+items that live claims fill up, the items this person touched, and their ranges as one
+multirange. `NOT IN` hashes a set whatever the planner estimates, and with no join in the
+query, stale statistics have no nested loop to choose. Under the k6 load test the per-item
+form was nine tenths of Postgres's execution time, and requests queued for pool connections
+behind it. Part of its cost was JIT compilation, which Postgres starts once a query's
+estimated cost passes `jit_above_cost`; the server turns JIT off on its connections. The
+load job reports each statement's share and the plan of the slowest (`load/profile.mjs`).
+
 **Blind audit.** When an item is claimed and a draft exists, a deterministic hash of
 (project, item, user) decides whether the draft is shown, against the project's
 `blindRate`. The decision is stored on the annotation (`draft_shown`). Agreement with the
