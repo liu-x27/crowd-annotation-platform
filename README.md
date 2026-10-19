@@ -17,7 +17,7 @@ human labels, and every number reported against the source it came from.
 ![Postgres](https://img.shields.io/badge/Postgres-embedded_PGlite_or_a_server-17171a?style=flat-square&logo=postgresql&logoColor=white)
 ![React 19](https://img.shields.io/badge/React_19-Tailwind_4-17171a?style=flat-square&logo=react&logoColor=white)
 ![LLM drafts](https://img.shields.io/badge/drafts-Ollama_·_Claude_·_OpenAI--compatible-fcd34d?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-135-17171a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-141-17171a?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-17171a?style=flat-square)](LICENSE)
 
 **[Project page](https://liu-x27.github.io/crowd-annotation-platform/)** · [Why a rewrite](#why-a-rewrite) · [What it does](#what-it-does) · [Running it](#running-it) · [Status](#status) · [Architecture](docs/ARCHITECTURE.md)
@@ -223,7 +223,7 @@ job runner, the drafting pipeline and why each piece is the way it is.
 ## Tests
 
 ```bash
-npm test           # 126 tests: shared 29, server 92, web 5
+npm test           # 131 tests: shared 29, server 97, web 5
 npm run typecheck
 npm run lint
 npm run a11y       # axe on 14 pages in both themes, against a running demo instance
@@ -233,8 +233,8 @@ TEST_DATABASE_URL=postgres://user:password@localhost:5432/postgres npm test -w @
 Server tests run against a fresh in-memory Postgres per file and call the app without
 opening a port. With `TEST_DATABASE_URL` (a role that may create databases) they run on
 that Postgres server instead, each file on its own copy of a template database migrated
-once per run, together with nine tests that need connections running in parallel (`postgres.test.ts`); CI does both, on
-Postgres 18. Among what they pin down: two annotators asking at the same moment never
+once per run, together with ten tests that need connections running in parallel
+(`postgres.test.ts`); CI does both, on Postgres 18. Among what they pin down: two annotators asking at the same moment never
 get the same item, and redundancy 2 never reaches a third person, also when a claim
 commits while another claim's scan is on its way to the same item; an expired lease frees
 the item; a returned answer comes back to its author first; failed model calls are
@@ -265,7 +265,7 @@ qwen3:4b and from llama3.1:8b.
 Tested in [CI](.github/workflows/ci.yml), for every push to `main` and every pull request:
 
 - **A Postgres server.** The server suite runs on Postgres 18 as well as on the embedded
-  one, with nine more tests that need connections running in parallel. The first run
+  one, with ten more tests that need connections running in parallel. The first run
   found a bug: a claim made in one statement could give an item to more people than
   the project's redundancy allows. `SKIP LOCKED` passes over an item only while another
   claim holds it, and the scan's snapshot can predate a claim committed in between. Claims
@@ -277,10 +277,21 @@ Tested in [CI](.github/workflows/ci.yml), for every push to `main` and every pul
 - **Load.** k6 runs 24 annotators looping claim → submit through 4,000 items at redundancy
   1 and 4,000 at redundancy 2, after which the database is asked whether every item was
   answered exactly as often as its project asks. Before the fix, 215 and 400 items were
-  answered once too often, while no request failed; since, none. k6, the server and
-  Postgres share one runner, so its timings are only for comparing runs with each other:
-  since the fix, 67 to 80 submits a second, and a median of 210 to 280 ms for a submit and
-  the next claim. It remains a single-node application by design: jobs run in-process.
+  answered once too often, while no request failed; since, none. The job also reports
+  each statement's share of Postgres's time, the plan of the slowest, waits for pool
+  connections, CPU per process and a CPU profile of the server. k6, the server and
+  Postgres share one runner, so its timings are only for comparing runs with each other.
+  They found nine tenths of Postgres's time in the count of items left that every submit
+  returns: JIT compilation, then three index lookups per open item. JIT is now off and
+  the count taken once per project
+  ([ARCHITECTURE.md](docs/ARCHITECTURE.md#the-annotation-lifecycle)). That left the
+  server's event loop 93% busy, half of its CPU per submit in drizzle-orm writing SQL for
+  whole-row reads that a claim mostly did not need; claims now return what the response
+  shows from their own two statements. With both, two runs of one commit made 178 and
+  266 submits a second against 68 and 63 before, with a median of 115 and 72 ms for a
+  submit and the next claim against 225 and 280, and a p99 of 182 and 190 ms against 1.7
+  and 2.2 s. Postgres is now the busiest process on the runner. It remains a single-node
+  application by design: jobs run in-process.
 - **The container image.** Multi-stage, non-root, data in a `/data` volume, a health
   check. It is smoke-tested from a first admin to an export and again after a restart,
   published to `ghcr.io/liu-x27/crowd-annotation-platform` with a build provenance

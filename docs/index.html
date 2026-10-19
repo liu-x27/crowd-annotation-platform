@@ -365,7 +365,7 @@
       </div>
       <ul class="badges" aria-label="Built with">
         <li>Hono · Drizzle</li><li>Postgres · PGlite</li><li>React 19 · Tailwind 4</li>
-        <li>Ollama · Claude · OpenAI-compatible</li><li>FOR UPDATE SKIP LOCKED</li><li>English · 中文</li><li>135 tests · CI</li>
+        <li>Ollama · Claude · OpenAI-compatible</li><li>FOR UPDATE SKIP LOCKED</li><li>English · 中文</li><li>141 tests · CI</li>
       </ul>
 
       <div>
@@ -605,7 +605,7 @@
         <div>
           <h3 class="col">Tested</h3>
           <ul class="checks yes">
-            <li><b>135 tests</b>, server ones against a fresh in-memory Postgres per file, and in CI on Postgres 18 as well: two annotators asking at once never get the same item; a failed model call is never a label; no test item ever contributes a training label.</li>
+            <li><b>141 tests</b>, server ones against a fresh in-memory Postgres per file, and in CI on Postgres 18 as well: two annotators asking at once never get the same item; a failed model call is never a label; no test item ever contributes a training label.</li>
             <li><b>Claims under load</b>, in CI: 24 annotators loop claim → submit through 8,000 items on Postgres 18, then every item is checked for exactly the answers its redundancy asks for. The first run found items handed out once too often with no request failing; claims now check the item again once it is locked.</li>
             <li><b>The container image</b>, in CI: smoke-tested, published to GHCR with a build provenance attestation, and its demo variant run within 512 MB.</li>
             <li><b>The v1 migration</b> on the real v1 database: 94,469 items and 135,835 annotations in 44 s, every annotation accounted for.</li>
@@ -639,7 +639,7 @@
 <span class="p"># one process serving both</span>
 <span class="p">$</span> npm run build &amp;&amp; npm start   <span class="p"># :4000</span>
 
-<span class="p">$</span> npm test              <span class="p"># 126 tests; 9 more on Postgres</span></pre>
+<span class="p">$</span> npm test              <span class="p"># 131 tests; 10 more on Postgres</span></pre>
         <div class="prose">
           <p><strong>Requirements.</strong> Node 22.12 or later. The database is an embedded Postgres (PGlite) in <code>./data</code>; set <code>DATABASE_URL</code> to use a server instead.</p>
           <p><strong>First run.</strong> On an empty database the first page asks for an admin account, and disappears once one exists.</p>

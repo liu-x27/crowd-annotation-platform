@@ -125,7 +125,8 @@ query, stale statistics have no nested loop to choose. Under the k6 load test th
 form was nine tenths of Postgres's execution time, and requests queued for pool connections
 behind it. Part of its cost was JIT compilation, which Postgres starts once a query's
 estimated cost passes `jit_above_cost`; the server turns JIT off on its connections. The
-load job reports each statement's share and the plan of the slowest (`load/profile.mjs`).
+load job reports each statement's share and the plan of the slowest (`load/profile.mjs`),
+and where the server's CPU goes per submit (`load/cpu-report.mjs`).
 
 **Blind audit.** When an item is claimed and a draft exists, a deterministic hash of
 (project, item, user) decides whether the draft is shown, against the project's
