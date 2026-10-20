@@ -88,7 +88,8 @@ jobs:
       - run: npm run build
       # Per-statement timings and plans for load/profile.mjs. A service container takes no
       # server options, so set them and restart it. auto_explain instruments 2% of
-      # statements and logs the plan of those that take 50 ms or more.
+      # statements and logs the plan, with buffers, of those that take 5 ms or more: the
+      # statements of a claim and a submit take a few ms each.
       - name: Turn on pg_stat_statements and auto_explain
         env:
           PG_CONTAINER: ${{ job.services.postgres.id }}
@@ -102,8 +103,9 @@ jobs:
           for _ in $(seq 1 30); do pg pg_isready -U postgres && break; sleep 1; done
           pg pg_isready -U postgres || { docker logs --tail 30 "$PG_CONTAINER"; exit 1; }
           pg psql -U postgres -c "create extension pg_stat_statements" \
-            -c "alter system set auto_explain.log_min_duration = '50ms'" \
+            -c "alter system set auto_explain.log_min_duration = '5ms'" \
             -c "alter system set auto_explain.log_analyze = on" \
+            -c "alter system set auto_explain.log_buffers = on" \
             -c "alter system set auto_explain.sample_rate = 0.02" \
             -c "select pg_reload_conf()"
       - name: Start the server

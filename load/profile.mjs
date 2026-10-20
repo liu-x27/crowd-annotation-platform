@@ -80,8 +80,10 @@ const end = await reading();
 const start = JSON.parse(readFileSync(START_FILE, 'utf8'));
 const { rows: statements } = await db.query(`
   select calls::int, plans::int, total_exec_time as exec_ms, total_plan_time as plan_ms,
-    rows::bigint, query
-  from pg_stat_statements
+    rows::bigint, (shared_blks_hit + shared_blks_read)::float8 as blocks,
+    -- Postgres 18 counts parallel workers per statement; older servers have no such column.
+    coalesce((to_jsonb(s) ->> 'parallel_workers_launched')::int, 0) as workers, query
+  from pg_stat_statements s
   where dbid = (select oid from pg_database where datname = current_database())
     and query not like '%pg_stat_statements%'
   order by total_exec_time desc`);
@@ -165,7 +167,9 @@ const top = statements
     (r, i) =>
       `#${i + 1} ${pct(r.exec_ms / execTotal)} of execution: ${r.calls} calls, ${r.plans} plans, ` +
       `${f2(r.exec_ms / r.calls)} ms mean (+${f2(r.plan_ms / r.calls)} planning), ` +
-      `${f1(per(r.exec_ms))} ms per submit — ${short(r.query)}`,
+      `${Math.round(r.blocks / r.calls)} buffers a call` +
+      (r.workers ? `, ${r.workers} parallel workers launched` : '') +
+      `, ${f1(per(r.exec_ms))} ms per submit — ${short(r.query)}`,
   );
 
 /** Text to compare a logged statement with pg_stat_statements' normalised one. */
@@ -179,7 +183,9 @@ const shape = (q) =>
 
 /**
  * Plans auto_explain logged to the Postgres container's output (the server must preload
- * it), for the statement that took the most time; the one with the median duration.
+ * it), for the statement that took the most time: the one with the median duration, of
+ * the plans made for particular values and of the generic ones a prepared statement reuses
+ * (those still have $n in them).
  */
 function planOfTop() {
   if (!process.env.PG_CONTAINER || !statements.length) return null;
@@ -202,15 +208,22 @@ function planOfTop() {
       .replace(/^Query Text:\s*/, '');
     if (shape(query) === want) plans.push({ ms: Number(m[1]), plan: body.slice(start).join('\n') });
   }
-  if (!plans.length) return null;
-  plans.sort((a, b) => a.ms - b.ms);
-  return { logged: plans.length, ...plans[Math.floor(plans.length / 2)] };
+  return [
+    ['made for its values', plans.filter((p) => !/\$\d/.test(p.plan))],
+    ['generic', plans.filter((p) => /\$\d/.test(p.plan))],
+  ]
+    .filter(([, some]) => some.length)
+    .map(([kind, some]) => {
+      some.sort((a, b) => a.ms - b.ms);
+      const median = some[Math.floor(some.length / 2)];
+      return {
+        title: `Plan of #1 ${kind}, the median of ${some.length} logged by auto_explain (${f1(median.ms)} ms)`,
+        plan: median.plan,
+      };
+    });
 }
-const plan = planOfTop();
-const planTitle = plan
-  ? `Plan of #1, the median of ${plan.logged} logged by auto_explain (${f1(plan.ms)} ms)`
-  : null;
-if (plan) console.log(`\n${planTitle}:\n${plan.plan}`);
+const plans = planOfTop() ?? [];
+for (const p of plans) console.log(`\n${p.title}:\n${p.plan}`);
 
 for (const line of [...lines, ...top]) console.log(line);
 if (process.env.GITHUB_ACTIONS) {
@@ -219,21 +232,23 @@ if (process.env.GITHUB_ACTIONS) {
   const property = (s) => data(s).replaceAll(':', '%3A').replaceAll(',', '%2C');
   const title = 'Where the time went (relative numbers; one runner for all three)';
   for (const line of [...lines, ...top]) console.log(`::notice title=${title}::${data(line)}`);
-  if (plan) console.log(`::notice title=${property(planTitle)}::${data(plan.plan)}`);
+  for (const p of plans) console.log(`::notice title=${property(p.title)}::${data(p.plan)}`);
   if (process.env.GITHUB_STEP_SUMMARY) {
     const table = statements
       .slice(0, 15)
       .map(
         (r) =>
           `| ${pct(r.exec_ms / execTotal)} | ${r.calls} | ${r.plans} | ${f2(r.exec_ms / r.calls)} | ` +
-          `${f2(r.plan_ms / r.calls)} | ${r.rows} | \`${short(r.query).replaceAll('|', '\\|')}\` |`,
+          `${f2(r.plan_ms / r.calls)} | ${Math.round(r.blocks / r.calls)} | ${r.workers} | ${r.rows} | ` +
+          `\`${short(r.query).replaceAll('|', '\\|')}\` |`,
       );
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
       `### ${title}\n\n${lines.map((l) => `- ${l}`).join('\n')}\n\n` +
-        '| share | calls | plans | mean ms | plan ms | rows | statement |\n|---|---|---|---|---|---|---|\n' +
+        '| share | calls | plans | mean ms | plan ms | buffers | workers | rows | statement |\n' +
+        '|---|---|---|---|---|---|---|---|---|\n' +
         `${table.join('\n')}\n` +
-        (plan ? `\n${planTitle}:\n\n\`\`\`\n${plan.plan}\n\`\`\`\n` : ''),
+        plans.map((p) => `\n${p.title}:\n\n\`\`\`\n${p.plan}\n\`\`\`\n`).join(''),
     );
   }
 }
