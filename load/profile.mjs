@@ -79,7 +79,8 @@ if (process.argv[2] === 'start') {
 const end = await reading();
 const start = JSON.parse(readFileSync(START_FILE, 'utf8'));
 const { rows: statements } = await db.query(`
-  select calls::int, total_exec_time as exec_ms, total_plan_time as plan_ms, rows::bigint, query
+  select calls::int, plans::int, total_exec_time as exec_ms, total_plan_time as plan_ms,
+    rows::bigint, query
   from pg_stat_statements
   where dbid = (select oid from pg_database where datname = current_database())
     and query not like '%pg_stat_statements%'
@@ -98,6 +99,11 @@ const pct = (x) => `${Math.round(x * 100)}%`;
 const lines = [];
 const wall = (end.at - start.at) / 1000;
 const cores = cpus().length;
+// Runners differ: two runs of one commit have made 178 and 266 submits a second.
+const osName = existsSync('/etc/os-release')
+  ? /^PRETTY_NAME="?([^"\n]*)/m.exec(readFileSync('/etc/os-release', 'utf8'))?.[1]
+  : undefined;
+const machine = [cpus()[0]?.model.trim(), osName].filter(Boolean).join(', ');
 if (start.runner && end.runner) {
   const ticks = end.runner.total - start.runner.total;
   const busyCores = ((end.runner.busy - start.runner.busy) / ticks) * cores;
@@ -116,7 +122,7 @@ if (start.runner && end.runner) {
         ) / wall
       : Number.NaN;
   lines.push(
-    `CPU over ${f1(wall)} s on ${cores} cores: ${f2(busyCores)} cores busy on average — ` +
+    `CPU over ${f1(wall)} s on ${cores} cores (${machine}): ${f2(busyCores)} cores busy on average — ` +
       `Postgres ${f2(pgCores)}, server ${f2(nodeCores)}, k6 and the rest ${f2(busyCores - pgCores - nodeCores)}`,
   );
 }
@@ -139,10 +145,11 @@ if (start.probe && end.probe) {
 const execTotal = statements.reduce((s, r) => s + r.exec_ms, 0);
 const planTotal = statements.reduce((s, r) => s + r.plan_ms, 0);
 const callsTotal = statements.reduce((s, r) => s + r.calls, 0);
+const plansTotal = statements.reduce((s, r) => s + r.plans, 0);
 lines.push(
   `Postgres per submit: ${f2(per(execTotal))} ms executing and ${f2(per(planTotal))} ms planning ` +
-    `over ${f1(per(callsTotal))} statements (${submits} submits; all statements of the run, ` +
-    `setup included)`,
+    `over ${f1(per(callsTotal))} statements and ${f1(per(plansTotal))} plans ` +
+    `(${submits} submits; all statements of the run, setup included)`,
 );
 
 /** Statement text, short enough to read: whitespace collapsed, no drizzle column lists. */
@@ -156,7 +163,7 @@ const top = statements
   .slice(0, TOP)
   .map(
     (r, i) =>
-      `#${i + 1} ${pct(r.exec_ms / execTotal)} of execution: ${r.calls} calls, ` +
+      `#${i + 1} ${pct(r.exec_ms / execTotal)} of execution: ${r.calls} calls, ${r.plans} plans, ` +
       `${f2(r.exec_ms / r.calls)} ms mean (+${f2(r.plan_ms / r.calls)} planning), ` +
       `${f1(per(r.exec_ms))} ms per submit — ${short(r.query)}`,
   );
@@ -218,13 +225,13 @@ if (process.env.GITHUB_ACTIONS) {
       .slice(0, 15)
       .map(
         (r) =>
-          `| ${pct(r.exec_ms / execTotal)} | ${r.calls} | ${f2(r.exec_ms / r.calls)} | ` +
+          `| ${pct(r.exec_ms / execTotal)} | ${r.calls} | ${r.plans} | ${f2(r.exec_ms / r.calls)} | ` +
           `${f2(r.plan_ms / r.calls)} | ${r.rows} | \`${short(r.query).replaceAll('|', '\\|')}\` |`,
       );
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
       `### ${title}\n\n${lines.map((l) => `- ${l}`).join('\n')}\n\n` +
-        '| share | calls | mean ms | plan ms | rows | statement |\n|---|---|---|---|---|---|\n' +
+        '| share | calls | plans | mean ms | plan ms | rows | statement |\n|---|---|---|---|---|---|---|\n' +
         `${table.join('\n')}\n` +
         (plan ? `\n${planTitle}:\n\n\`\`\`\n${plan.plan}\n\`\`\`\n` : ''),
     );
