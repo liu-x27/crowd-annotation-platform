@@ -1,16 +1,20 @@
 import type { QueueView, SubmitResult } from '@crowd/shared';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Client as PgClient } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rows } from '../db/client';
+import { users } from '../db/schema';
+import { claimNext, submitAnnotation } from '../modules/annotate/queue';
+import { normalized } from '../modules/projects/access';
+import { getProject } from '../modules/projects/service';
 import { type Client, type Harness, harness } from './harness';
 
 /**
- * What only exists with more than one connection, and one setting PGlite does not have. On
- * PGlite every query runs on one connection, so these are skipped there; CI runs them
- * against a Postgres server (TEST_DATABASE_URL), where requests the app handles at once hold
- * separate pool connections, and the raw connections below can hold a transaction open in
- * between.
+ * What only exists with more than one connection, and what PGlite does not have: one
+ * setting, and statements prepared on a connection. On PGlite every query runs on one
+ * connection, so these are skipped there; CI runs them against a Postgres server
+ * (TEST_DATABASE_URL), where requests the app handles at once hold separate pool
+ * connections, and the raw connections below can hold a transaction open in between.
  */
 describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
   let h: Harness;
@@ -117,6 +121,34 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
     // openDatabase turns it off: compiling took longer than the queue's queries ran.
     const [row] = await rows<{ jit: string }>(h.deps.db, sql`show jit`);
     expect(row!.jit).toBe('off');
+  });
+
+  it('prepares a claim: its insert is planned for particular values five times, then once for any', async () => {
+    const p = await h.project(
+      { name: 'prepared', settings: { autoFinalize: 'never' } },
+      texts(10, 'prepared'),
+    );
+    const ann = await h.user('prepared');
+    const project = normalized(await getProject(h.deps.db, p.id));
+    const [user] = await h.deps.db.select().from(users).where(eq(users.id, ann.me.id));
+    // In one transaction, so on one connection: a statement is prepared per connection.
+    // claimNext and submitAnnotation then run in savepoints of it.
+    const { served, plans } = await h.deps.db.transaction(async (tx) => {
+      const served: number[] = [];
+      for (let i = 0; i < 8; i++) {
+        const claim = (await claimNext(tx, project, user!))!;
+        served.push(claim.item.seq);
+        await submitAnnotation(tx, project, user!, claim.annotationId, { label: 'pos' });
+      }
+      const plans = await rows<{ generic: number; custom: number }>(
+        tx,
+        sql`select generic_plans::int as generic, custom_plans::int as custom
+            from pg_prepared_statements where statement like '%insert into annotations%'`,
+      );
+      return { served, plans };
+    });
+    expect(served).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(plans).toEqual([{ generic: 3, custom: 5 }]);
   });
 
   describe('claims', () => {

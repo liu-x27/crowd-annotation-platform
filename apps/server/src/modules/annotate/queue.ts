@@ -13,7 +13,7 @@ import {
   withText,
 } from '@crowd/shared';
 import { and, desc, eq, inArray, lt, type SQL, sql } from 'drizzle-orm';
-import { type Db, type DbOrTx, one, rows } from '../../db/client';
+import { type Db, type DbOrTx, one, prepared } from '../../db/client';
 import {
   type AnnotationRow,
   annotations,
@@ -78,6 +78,11 @@ export async function availableCount(
   const ranges = (where: SQL) =>
     sql`(select range_agg(int4range(r.seq_from, r.seq_to, '[]')) filter (where r.seq_from <= r.seq_to)
          from assignments r where ${where})`;
+  // Planned on every call, unlike the claim's statements: a plan made for the call sees how
+  // big the tables are now, while a prepared statement keeps the generic plan it made first.
+  // Under the k6 job that plan dated from a nearly empty annotations table, and it went on
+  // to read every human annotation to find the live claims: 4,238 buffers a call, against
+  // 608 planned each time.
   const row = await one<{ n: number }>(
     db,
     sql`
@@ -103,7 +108,7 @@ export async function availableCount(
 }
 
 async function submittedCount(db: DbOrTx, projectId: number, userId: number): Promise<number> {
-  const row = await one<{ n: number }>(
+  const [row] = await prepared<{ n: number }>(
     db,
     sql`select count(*)::int as n from annotations
         where project_id = ${projectId} and source = 'human' and user_id = ${userId} and status = 'submitted'`,
@@ -227,7 +232,7 @@ export async function claimNext(
   if (project.archivedAt) return null;
   return db.transaction(async (tx) => {
     // One claim decision at a time per (project, user): two tabs cannot open two claims.
-    await tx.execute(sql`select pg_advisory_xact_lock(${project.id}::int, ${user.id}::int)`);
+    await prepared(tx, sql`select pg_advisory_xact_lock(${project.id}::int, ${user.id}::int)`);
 
     // 1. An open claim: resume it, unless the item has moved on without this user. Lock the
     // items first, in id order as bulk review does, then read the claims and count who else
@@ -236,7 +241,7 @@ export async function claimNext(
     // a fresh claim still being inserted (step 3 holds the item while it inserts) would be
     // missed, and an expired claim renewed beside it, over the item's redundancy; and a
     // reviewer finalising the item could drop this claim between the read and the renewal.
-    const locked = await rows<{ id: number }>(
+    const locked = await prepared<{ id: number }>(
       tx,
       sql`
         select i.id from items i
@@ -287,7 +292,7 @@ export async function claimNext(
 
     // 2. Returned work. Asked for by id: this runs before every fresh claim and nearly always
     // finds nothing, and the whole rows are only needed when it finds something.
-    const [returned] = await rows<{ id: number }>(
+    const [returned] = await prepared<{ id: number }>(
       tx,
       sql`
         select a.id from annotations a
@@ -329,7 +334,7 @@ export async function claimNext(
           )})`
         : sql``;
       const first = (only: SQL) =>
-        rows<ClaimItem>(
+        prepared<ClaimItem>(
           tx,
           sql`
             select i.id, i.seq, i.text, i.meta, i.calibration from items i
@@ -343,7 +348,7 @@ export async function claimNext(
       const fromSet = await first(sql`and i.calibration`);
       const [candidate] = fromSet.length ? fromSet : await first(sql``);
       if (!candidate) return null;
-      const [hit] = await rows<{ id: number; lease_expires_at: string; has_draft: boolean }>(
+      const [hit] = await prepared<{ id: number; lease_expires_at: string; has_draft: boolean }>(
         tx,
         sql`
           insert into annotations (project_id, item_id, source, user_id, status, lease_expires_at)
@@ -456,7 +461,9 @@ async function ownAnnotation(tx: DbOrTx, annotationId: number, user: UserRow) {
     .from(annotations)
     .innerJoin(items, eq(items.id, annotations.itemId))
     .where(eq(annotations.id, annotationId))
-    .for('update');
+    .for('update')
+    .prepare('own_annotation')
+    .execute();
   if (!row) throw notFound('Annotation');
   if (row.a.source !== 'human' || row.a.userId !== user.id)
     throw forbidden('That annotation is not yours.');
@@ -503,11 +510,15 @@ export async function submitAnnotation(
         updatedAt: new Date(),
         leaseExpiresAt: null,
       })
-      .where(eq(annotations.id, a.id));
+      .where(eq(annotations.id, a.id))
+      .prepare('submit_annotation')
+      .execute();
     await tx
       .update(items)
       .set({ humanCount: sql`${items.humanCount} + 1` })
-      .where(eq(items.id, i.id));
+      .where(eq(items.id, i.id))
+      .prepare('count_answer')
+      .execute();
     return { finalized: await maybeAutoFinalize(tx, project, i) };
   });
 }

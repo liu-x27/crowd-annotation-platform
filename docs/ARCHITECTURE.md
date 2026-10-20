@@ -130,6 +130,20 @@ slowest (`load/profile.mjs`), where the server's CPU goes per submit
 (`load/cpu-report.mjs`), and which CPU the runner had: two runs of one commit have made
 178 and 266 submits a second.
 
+The statements a claim and a submit run are prepared on a Postgres server (`prepared` in
+`apps/server/src/db/client.ts`; drizzle's `.prepare` for the three that are query
+builders): each pool connection parses one once, and from its sixth run Postgres keeps one
+plan for any parameters, unless that plan is estimated to cost more than the ones it made
+for particular values. Under the k6 job, planning them had been about a third of Postgres's
+time on them. The count of what is left is planned on every call. A generic plan is kept
+until the tables are analyzed again, and the count's, made while the load test's
+annotations table was nearly empty, read every human annotation to find the live claims:
+seven to nine times the buffers of the count planned each time, and nearly twice the
+time. Nothing else is prepared either: a report can gain more from a plan made for its
+values than the planning costs, and each text a connection prepares stays on it until the
+connection closes. `postgres.test.ts` checks that a claim's insert is planned for
+particular values five times, then reused.
+
 **Blind audit.** When an item is claimed and a draft exists, a deterministic hash of
 (project, item, user) decides whether the draft is shown, against the project's
 `blindRate`. The decision is stored on the annotation (`draft_shown`). Agreement with the

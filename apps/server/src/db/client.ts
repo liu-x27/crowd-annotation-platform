@@ -81,4 +81,31 @@ export async function one<T>(db: DbOrTx, query: SQL): Promise<T | undefined> {
   return (await rows<T>(db, query))[0];
 }
 
+/** Names for `prepared`, one per statement text, so that no name stands for two texts. */
+const statementNames = new Map<string, string>();
+
+/**
+ * `rows`, as a named prepared statement on a Postgres server: each connection parses the
+ * text once, and from the sixth run Postgres reuses one plan for any parameters, as long as
+ * that plan is estimated to cost no more than the ones it made for particular values. Meant
+ * for the statements every claim and submit runs: under the k6 load test, planning them was
+ * about a third of Postgres's time on them, before any parsing. Not for a statement whose
+ * best plan changes as its tables grow, such as the count of what is left (`availableCount`):
+ * the generic plan is kept until the tables are analyzed again. The text may vary (a
+ * redundancy written into it, ids to pass over); each text gets a name of its own. On PGlite,
+ * the same as `rows`.
+ */
+export async function prepared<T>(db: DbOrTx, query: SQL): Promise<T[]> {
+  const built = db.execute(query).getQuery();
+  let name = statementNames.get(built.sql);
+  if (name === undefined) {
+    name = `s${statementNames.size + 1}`;
+    statementNames.set(built.sql, name);
+  }
+  const result = (await db._.session.prepareQuery(built, undefined, name, false).execute()) as
+    | { rows?: T[] }
+    | T[];
+  return Array.isArray(result) ? result : (result.rows ?? []);
+}
+
 export { sql };
