@@ -233,8 +233,9 @@ TEST_DATABASE_URL=postgres://user:password@localhost:5432/postgres npm test -w @
 Server tests run against a fresh in-memory Postgres per file and call the app without
 opening a port. With `TEST_DATABASE_URL` (a role that may create databases) they run on
 that Postgres server instead, each file on its own copy of a template database migrated
-once per run, together with ten tests that need connections running in parallel
-(`postgres.test.ts`); CI does both, on Postgres 18. Among what they pin down: two annotators asking at the same moment never
+once per run, together with ten tests that only a server can run (`postgres.test.ts`):
+nine need connections running in parallel, one checks that JIT is off. CI does both, on
+Postgres 18. Among what they pin down: two annotators asking at the same moment never
 get the same item, and redundancy 2 never reaches a third person, also when a claim
 commits while another claim's scan is on its way to the same item; an expired lease frees
 the item; a returned answer comes back to its author first; failed model calls are
@@ -265,9 +266,9 @@ qwen3:4b and from llama3.1:8b.
 Tested in [CI](.github/workflows/ci.yml), for every push to `main` and every pull request:
 
 - **A Postgres server.** The server suite runs on Postgres 18 as well as on the embedded
-  one, with ten more tests that need connections running in parallel. The first run
-  found a bug: a claim made in one statement could give an item to more people than
-  the project's redundancy allows. `SKIP LOCKED` passes over an item only while another
+  one, with ten more that only a server can run: nine need connections running in
+  parallel, one checks that JIT is off. The first run found a bug: a claim made in one
+  statement could give an item to more people than the project's redundancy allows. `SKIP LOCKED` passes over an item only while another
   claim holds it, and the scan's snapshot can predate a claim committed in between. Claims
   now check the item again once it is locked
   ([ARCHITECTURE.md](docs/ARCHITECTURE.md#the-annotation-lifecycle)). A second race, seen in

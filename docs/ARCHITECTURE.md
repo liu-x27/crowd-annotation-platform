@@ -71,7 +71,7 @@ then work a reviewer returned to them, then a fresh item. A fresh item is claime
 statements, in one transaction (calibration items first; see [Calibration](#calibration)):
 
 ```sql
-SELECT i.id, i.seq, i.text, i.meta FROM items i
+SELECT i.id, i.seq, i.text, i.meta, i.calibration FROM items i
 WHERE <eligible for this user>          -- not final, < redundancy answers or live claims,
 ORDER BY i.seq LIMIT 1                  -- not already touched by this user, inside their
 FOR UPDATE OF i SKIP LOCKED;            -- assignment ranges (or outside everyone's)
