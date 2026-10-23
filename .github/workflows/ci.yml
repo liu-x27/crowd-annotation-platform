@@ -2,9 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # ab/*: also time the branch against main with the load A/B job below.
+    branches: [main, 'ab/**']
   pull_request:
   workflow_dispatch:
+    inputs:
+      ab_base:
+        description: >-
+          Load A/B: a ref to time against this one, the two taking turns on one runner
+          (leave empty to skip; a push to an ab/* branch times it against main)
+        required: false
+        default: ''
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -157,6 +165,52 @@ jobs:
       - name: Server log
         if: failure()
         run: tail -n 100 server.log
+
+  # On request only: the load test on this commit and on a base, taking turns on one
+  # runner, since runners differ too much for runs on different ones to be compared. The
+  # base is main for a push to an ab/* branch, or ab_base given to Run workflow. See
+  # load/ab.mjs.
+  load-ab:
+    name: Load A/B (k6, this commit against ${{ inputs.ab_base || 'main' }})
+    if: ${{ startsWith(github.ref, 'refs/heads/ab/') || inputs.ab_base != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ab_base || 'main' }}
+          path: ab-base
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci && npm run build
+      - run: npm ci && npm run build
+        working-directory: ab-base
+      - uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: '2.3.0'
+      - name: Time both builds, taking turns
+        run: node load/ab.mjs
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+          AB_BASE_DIR: ab-base
+          AB_ROUNDS: 4
+          VUS: 12
+          ITEMS: 4000
+      - name: Server logs
+        if: failure()
+        run: tail -n 40 ab-*.log
 
   image:
     name: Container image (build and smoke test)
