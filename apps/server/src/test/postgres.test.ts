@@ -123,6 +123,19 @@ describe.runIf(process.env.TEST_DATABASE_URL)('on a Postgres server', () => {
     expect(row!.jit).toBe('off');
   });
 
+  it('keeps going when Postgres ends one of its idle connections', async () => {
+    await rows(h.deps.db, sql`select 1`);
+    const ended = await monitor.query(
+      `select pg_terminate_backend(pid) from pg_stat_activity
+       where datname = current_database() and pid <> pg_backend_pid() and state = 'idle'`,
+    );
+    expect(ended.rowCount).toBeGreaterThan(0);
+    // Let the pool hear of it before the next query.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const [row] = await rows<{ one: number }>(h.deps.db, sql`select 1 as one`);
+    expect(row!.one).toBe(1);
+  });
+
   it('prepares a claim: its insert is planned for particular values five times, then once for any', async () => {
     const p = await h.project(
       { name: 'prepared', settings: { autoFinalize: 'never' } },

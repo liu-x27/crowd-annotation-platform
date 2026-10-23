@@ -44,6 +44,11 @@ export async function openDatabase(
     // compiling takes longer than the running: under the k6 load test, the count of what is
     // left spent 45 of its 86 ms compiling. An `options` parameter in DATABASE_URL replaces this.
     const pool = new Pool({ connectionString: config.databaseUrl, max: 10, options: '-c jit=off' });
+    // Postgres can end a connection the pool holds idle: a restart, a failover,
+    // pg_terminate_backend, a database dropped with force. The pool reports it as an 'error'
+    // once it has let the connection go, and with nobody listening that error would be thrown
+    // and stop the server. The next query opens a new connection.
+    pool.on('error', (err) => console.error('Postgres ended an idle connection:', err.message));
     const db = drizzle(pool, { schema, casing: 'snake_case' });
     await migrate(db, { migrationsFolder: folder });
     return { db: db as unknown as Db, kind: 'postgres', close: () => pool.end() };
