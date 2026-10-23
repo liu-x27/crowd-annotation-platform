@@ -128,7 +128,9 @@ estimated cost passes `jit_above_cost`; the server turns JIT off on its connecti
 load job reports each statement's share, how often it was planned, and the plan of the
 slowest (`load/profile.mjs`), where the server's CPU goes per submit
 (`load/cpu-report.mjs`), and which CPU the runner had: two runs of one commit have made
-178 and 266 submits a second.
+178 and 266 submits a second. Two builds are compared by `load/ab.mjs`, which runs the test
+on each in turn on one runner, a fresh database for every run; in CI a push to an `ab/*`
+branch times it against main.
 
 The statements a claim and a submit run are prepared on a Postgres server (`prepared` in
 `apps/server/src/db/client.ts`; drizzle's `.prepare` for the three that are query

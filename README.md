@@ -17,7 +17,7 @@ human labels, and every number reported against the source it came from.
 ![Postgres](https://img.shields.io/badge/Postgres-embedded_PGlite_or_a_server-17171a?style=flat-square&logo=postgresql&logoColor=white)
 ![React 19](https://img.shields.io/badge/React_19-Tailwind_4-17171a?style=flat-square&logo=react&logoColor=white)
 ![LLM drafts](https://img.shields.io/badge/drafts-Ollama_·_Claude_·_OpenAI--compatible-fcd34d?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-141-17171a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-143-17171a?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-17171a?style=flat-square)](LICENSE)
 
 **[Project page](https://liu-x27.github.io/crowd-annotation-platform/)** · [Why a rewrite](#why-a-rewrite) · [What it does](#what-it-does) · [Running it](#running-it) · [Status](#status) · [Architecture](docs/ARCHITECTURE.md)
@@ -213,7 +213,8 @@ apps/web          React 19 · TanStack Query · Tailwind 4 · Radix · hand-draw
 packages/shared   zod schemas and API types used by both, code-point span utilities,
                   the statistics behind calibration
 docs/             ARCHITECTURE.md · MIGRATING_FROM_V1.md · DEPLOY.md · screenshots
-load/             k6 load test of claim → submit, and the check of the database after it
+load/             k6 load test of claim → submit, the check of the database after it, and
+                  an A/B of two builds on one runner
 scripts/          smoke tests of a running instance and of the container image
 ```
 
@@ -233,19 +234,21 @@ TEST_DATABASE_URL=postgres://user:password@localhost:5432/postgres npm test -w @
 Server tests run against a fresh in-memory Postgres per file and call the app without
 opening a port. With `TEST_DATABASE_URL` (a role that may create databases) they run on
 that Postgres server instead, each file on its own copy of a template database migrated
-once per run, together with ten tests that only a server can run (`postgres.test.ts`):
-nine need connections running in parallel, one checks that JIT is off. CI does both, on
-Postgres 18. Among what they pin down: two annotators asking at the same moment never
-get the same item, and redundancy 2 never reaches a third person, also when a claim
-commits while another claim's scan is on its way to the same item; an expired lease frees
-the item; a returned answer comes back to its author first; failed model calls are
-recorded as errors, never as labels; an item is never shown its own answer as a worked
-example; no test item ever contributes a training label; the human-only export contains no
-model or imported labels; a v1 bcrypt password still signs in and is upgraded; the v1
-migration repairs the badge-inflated span; the database and the JS agree on which answers
-are the same, so two annotators marking the same entities in a different order are not a
-disagreement; and bulk review never overwrites a decision already made. On the web side, span offsets are read from the
-DOM's data attributes rather than from rendered text length — the v1 bug.
+once per run, together with twelve tests that only a server can run (`postgres.test.ts`):
+nine need connections running in parallel, and three check that JIT is off, that a claim's
+insert is prepared, and that the server keeps going when Postgres ends one of its idle
+connections. CI does both, on Postgres 18. Among what they pin down: two annotators asking
+at the same moment never get the same item, and redundancy 2 never reaches a third person,
+also when a claim commits while another claim's scan is on its way to the same item; an
+expired lease frees the item; a returned answer comes back to its author first; failed
+model calls are recorded as errors, never as labels; an item is never shown its own answer
+as a worked example; no test item ever contributes a training label; the human-only export
+contains no model or imported labels; a v1 bcrypt password still signs in and is upgraded;
+the v1 migration repairs the badge-inflated span; the database and the JS agree on which
+answers are the same, so two annotators marking the same entities in a different order are
+not a disagreement; and bulk review never overwrites a decision already made. On the web
+side, span offsets are read from the DOM's data attributes rather than from rendered text
+length — the v1 bug.
 
 ## Status
 
@@ -266,33 +269,46 @@ qwen3:4b and from llama3.1:8b.
 Tested in [CI](.github/workflows/ci.yml), for every push to `main` and every pull request:
 
 - **A Postgres server.** The server suite runs on Postgres 18 as well as on the embedded
-  one, with ten more that only a server can run: nine need connections running in
-  parallel, one checks that JIT is off. The first run found a bug: a claim made in one
-  statement could give an item to more people than the project's redundancy allows. `SKIP LOCKED` passes over an item only while another
-  claim holds it, and the scan's snapshot can predate a claim committed in between. Claims
-  now check the item again once it is locked
-  ([ARCHITECTURE.md](docs/ARCHITECTURE.md#the-annotation-lifecycle)). A second race, seen in
-  the code and then made to fail in CI, is fixed the same way: renewing a claim whose lease
-  had run out, while someone else was taking the item, left the item with two holders, and
-  a reviewer finalising it at that moment turned the renewal into a 500.
+  one, with twelve more that only a server can run. The first run found a bug: a claim
+  made in one statement could give an item to more people than the project's redundancy
+  allows. `SKIP LOCKED` passes over an item only while another claim holds it, and the
+  scan's snapshot can predate a claim committed in between. Claims now check the item
+  again once it is locked
+  ([ARCHITECTURE.md](docs/ARCHITECTURE.md#the-annotation-lifecycle)). A second race, seen
+  in the code and then made to fail in CI, is fixed the same way: renewing a claim whose
+  lease had run out, while someone else was taking the item, left the item with two
+  holders, and a reviewer finalising it at that moment turned the renewal into a 500. A
+  third came from a run that failed with every test passing: when Postgres ended a
+  connection the pool held idle, as a test's teardown did, the error was thrown with
+  nothing to catch it, which in a server stops the process. It is now logged.
 - **Load.** k6 runs 24 annotators looping claim → submit through 4,000 items at redundancy
   1 and 4,000 at redundancy 2, after which the database is asked whether every item was
   answered exactly as often as its project asks. Before the fix, 215 and 400 items were
   answered once too often, while no request failed; since, none. The job also reports
-  each statement's share of Postgres's time, the plan of the slowest, waits for pool
-  connections, CPU per process and a CPU profile of the server. k6, the server and
-  Postgres share one runner, so its timings are only for comparing runs with each other.
-  They found nine tenths of Postgres's time in the count of items left that every submit
-  returns: JIT compilation, then three index lookups per open item. JIT is now off and
-  the count taken once per project
+  each statement's share of Postgres's time and how often it was planned, the plan of the
+  slowest, waits for pool connections, CPU per process, a CPU profile of the server and
+  the runner's CPU. k6, the server and Postgres share one runner, so its timings are only
+  for comparing runs with each other. They found nine tenths of Postgres's time in the
+  count of items left that every submit returns: JIT compilation, then three index lookups
+  per open item. JIT is now off and the count taken once per project
   ([ARCHITECTURE.md](docs/ARCHITECTURE.md#the-annotation-lifecycle)). That left the
   server's event loop 93% busy, half of its CPU per submit in drizzle-orm writing SQL for
   whole-row reads that a claim mostly did not need; claims now return what the response
   shows from their own two statements. With both, two runs of one commit made 178 and
   266 submits a second against 68 and 63 before, with a median of 115 and 72 ms for a
   submit and the next claim against 225 and 280, and a p99 of 182 and 190 ms against 1.7
-  and 2.2 s. Postgres is now the busiest process on the runner. It remains a single-node
-  application by design: jobs run in-process.
+  and 2.2 s. The gap between those two runs is the runners', so builds are now compared
+  with `load/ab.mjs`, which runs the test on both in turn on one runner, four rounds each
+  (in CI, a push to an `ab/*` branch, against main). Postgres was by then the busiest
+  process on the runner, and about a third of its time on a submit went to planning
+  statements anew on every call. The statements of a claim and a submit are now prepared,
+  except the count of items left: its plan for any user, made while the annotations table
+  was nearly empty, went on to read seven to nine times the buffers
+  ([ARCHITECTURE.md](docs/ARCHITECTURE.md#the-annotation-lifecycle)). Against the build
+  before, in three such jobs (two on an AMD EPYC 7763, one on an EPYC 9V74), it was faster
+  in 11 of 12 rounds: 6.5, 16.4 and 25.1% more submits a second, a median submit and next
+  claim 9.3, 16.8 and 19.8% shorter, and 14, 28 and 41% less of Postgres's CPU per submit.
+  It remains a single-node application by design: jobs run in-process.
 - **The container image.** Multi-stage, non-root, data in a `/data` volume, a health
   check. It is smoke-tested from a first admin to an export and again after a restart,
   published to `ghcr.io/liu-x27/crowd-annotation-platform` with a build provenance
